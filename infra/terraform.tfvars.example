@@ -1,0 +1,32 @@
+# =============================================================================
+# Terraform Variables — copy to terraform.tfvars and fill in your values
+# =============================================================================
+# cp terraform.tfvars.example terraform.tfvars
+#
+# terraform.tfvars is gitignored. See SETUP.md "Step 3" for how to obtain each value.
+
+# AWS region (must match your S3 buckets, ECR, and Secrets Manager)
+aws_region = "us-east-2"
+
+# Project name — used for all resource naming ({project_name}-fetch, {project_name}-rds, etc.)
+project_name = "job-search-platform"
+
+# S3 bucket for JD storage — REQUIRED, create before terraform apply:
+#   aws s3 mb s3://YOUR-BUCKET-NAME --region us-east-2
+s3_bucket_name = ""
+
+# Bedrock Knowledge Base ID — REQUIRED, create in AWS Console:
+#   Bedrock > Knowledge Bases > Create > Titan Embeddings v2 > copy the ID
+bedrock_kb_id = ""
+
+# ACM certificate ARN for HTTPS on ALB — OPTIONAL, leave empty for HTTP-only (dev mode)
+# To enable HTTPS: create a cert in ACM for your domain, paste ARN here
+acm_certificate_arn = ""
+
+# ALB access logs S3 bucket — OPTIONAL, leave empty to disable access logging
+alb_access_logs_bucket = ""
+
+# VPC/subnet CIDRs — defaults are fine for most setups, change only if conflicting
+# vpc_cidr             = "10.0.0.0/16"
+# public_subnet_cidrs  = ["10.0.0.0/20", "10.0.16.0/20"]
+# private_subnet_cidrs = ["10.0.128.0/20", "10.0.144.0/20"]

@@ -1,0 +1,55 @@
+# Agent orchestration
+langgraph==0.2.60
+langchain-core==0.3.30
+
+# LLM client (Ollama)
+httpx==0.27.2
+
+# Database
+asyncpg==0.30.0
+
+# Embeddings (local ONNX)
+onnxruntime>=1.19.2
+numpy==1.26.4
+tokenizers==0.20.3
+
+# Vector store (email classification few-shot)
+chromadb==0.5.23
+
+# PII redaction
+presidio-analyzer==2.2.356
+presidio-anonymizer==2.2.356
+spacy==3.7.6
+
+# Experiment tracking
+mlflow==2.19.0
+
+# Gmail API
+google-api-python-client==2.159.0
+google-auth-oauthlib==1.2.1
+
+# Resume upload service
+fastapi==0.115.6
+uvicorn==0.34.0
+
+# Scheduling
+apscheduler==3.10.4
+
+# File upload (multipart form data)
+python-multipart==0.0.20
+
+# File type validation
+python-magic==0.4.27
+
+# PDF text extraction
+pdfplumber==0.11.4
+
+# AWS SDK (debug dashboard health checks)
+boto3>=1.35.0
+
+# JWT (debug dashboard cloud API proxy)
+PyJWT==2.9.0
+
+# Utilities
+python-dotenv==1.0.1
+pydantic==2.10.4

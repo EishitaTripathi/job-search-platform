@@ -1,0 +1,175 @@
+services:
+  # ---------------------------------------------------------------------------
+  # PostgreSQL — local dev database (mirrors RDS PostgreSQL 15 in production)
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: jobsearch
+      POSTGRES_USER: jobsearch
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-localdev}
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./infra/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U jobsearch"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # ---------------------------------------------------------------------------
+  # Ollama — local LLM server running Phi-3 Mini 3.8B (4-bit quantized)
+  #
+  # Auto-pulls phi3:mini on first boot (cached in ollama volume for subsequent runs).
+  # Health check verifies the model is available before dependent services start.
+  # ---------------------------------------------------------------------------
+  ollama:
+    image: ollama/ollama:0.6.2
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    entrypoint: ["/bin/sh", "-c", "ollama serve & sleep 5 && ollama pull phi3:mini && wait"]
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list | grep -q phi3"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 30s
+
+  # ---------------------------------------------------------------------------
+  # ChromaDB — vector store for email classification few-shot retrieval (PII)
+  #
+  # Stores labeled email embeddings locally. Email Classifier and Follow-up
+  # Advisor retrieve similar examples to inject as few-shot in Phi-3 prompts.
+  # ---------------------------------------------------------------------------
+  chromadb:
+    image: chromadb/chroma:0.5.23
+    ports:
+      - "8000:8000"
+    volumes:
+      - chroma_data:/chroma/chroma
+    environment:
+      ANONYMIZED_TELEMETRY: "false"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8000/api/v1/heartbeat || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # ---------------------------------------------------------------------------
+  # MLflow — experiment tracking for local agents
+  #
+  # Tracks classification accuracy, embedding quality, agent latency.
+  # Backend store in PostgreSQL, artifact store on local filesystem.
+  # ---------------------------------------------------------------------------
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:v2.19.0
+    ports:
+      - "5001:5000"
+    environment:
+      MLFLOW_BACKEND_STORE_URI: sqlite:///mlflow/mlflow.db
+      MLFLOW_DEFAULT_ARTIFACT_ROOT: /mlflow/artifacts
+    volumes:
+      - mlflow_data:/mlflow
+    command: >
+      mlflow server
+      --host 0.0.0.0
+      --port 5000
+      --backend-store-uri sqlite:///mlflow/mlflow.db
+      --default-artifact-root /mlflow/artifacts
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:5000/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  # ---------------------------------------------------------------------------
+  # App — local agents (Email Classifier, Follow-up Advisor) + resume service
+  #
+  # Runs APScheduler for email checks (every 2h) and daily follow-up (9:05am).
+  # Resume upload service on port 8001.
+  # ---------------------------------------------------------------------------
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.local
+    ports:
+      - "8001:8001"
+    environment:
+      DATABASE_URL: postgresql://jobsearch:${DB_PASSWORD:-localdev}@postgres:5432/jobsearch
+      OLLAMA_BASE_URL: http://ollama:11434
+      CHROMADB_HOST: chromadb
+      CHROMADB_PORT: 8000
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+      ONNX_MODEL_PATH: /app/local/models/all-MiniLM-L6-v2
+      GMAIL_CREDENTIALS_PATH: /app/credentials/credentials.json
+      GMAIL_TOKEN_PATH: /app/credentials/token.json
+      CLOUD_API_URL: ${CLOUD_API_URL:-}
+      INGEST_HMAC_KEY: ${INGEST_HMAC_KEY:-}
+      S3_BUCKET: ${S3_BUCKET:-}
+      AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION:-us-east-2}
+      AWS_SHARED_CREDENTIALS_FILE: /aws-creds/credentials
+      AWS_CONFIG_FILE: /aws-creds/config
+    volumes:
+      - ./local:/app/local
+      - ./scripts:/app/scripts:ro
+      - ./credentials:/app/credentials:ro
+      - ${HOME}/.aws:/aws-creds:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ollama:
+        condition: service_healthy
+      chromadb:
+        condition: service_healthy
+
+  # ---------------------------------------------------------------------------
+  # Debug Dashboard — system observability (localhost:8002)
+  #
+  # Runs locally only — uses your AWS credentials to check cloud infra
+  # and proxies RDS data through the cloud API. Never exposed publicly.
+  # ---------------------------------------------------------------------------
+  debug:
+    build:
+      context: .
+      dockerfile: Dockerfile.local
+    ports:
+      - "8002:8002"
+    environment:
+      CLOUD_API_URL: ${CLOUD_API_URL:-}
+      APP_PASSWORD: ${APP_PASSWORD:-changeme}
+      AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION:-us-east-2}
+      S3_BUCKET: ${S3_BUCKET:-}
+      SQS_QUEUE_NAME: ${SQS_QUEUE_NAME:-job-search-platform-jd-scrape-queue}
+      BEDROCK_KB_ID: ${BEDROCK_KB_ID:-}
+      AWS_SHARED_CREDENTIALS_FILE: /aws-creds/credentials
+      AWS_CONFIG_FILE: /aws-creds/config
+      DATABASE_URL: postgresql://jobsearch:${DB_PASSWORD:-localdev}@postgres:5432/jobsearch
+      OLLAMA_BASE_URL: http://ollama:11434
+      CHROMADB_HOST: chromadb
+      CHROMADB_PORT: 8000
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+      ONNX_MODEL_PATH: /app/local/models/all-MiniLM-L6-v2
+      GMAIL_CREDENTIALS_PATH: /app/credentials/credentials.json
+      GMAIL_TOKEN_PATH: /app/credentials/token.json
+    volumes:
+      - ./local:/app/local
+      - ./api:/app/api:ro
+      - ./infra/schema.sql:/app/infra/schema.sql:ro
+      - ${HOME}/.aws:/aws-creds:ro
+      - ./credentials:/app/credentials:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ["python", "-m", "uvicorn", "local.debug_dashboard:app", "--host", "0.0.0.0", "--port", "8002"]
+
+volumes:
+  pgdata:
+  ollama_data:
+  chroma_data:
+  mlflow_data:

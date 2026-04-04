@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Resume Upload — Local PII Redaction</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f8f9fa; color: #333; }
+        .container { max-width: 1200px; margin: 0 auto; padding: 1rem; }
+        h1 { margin-bottom: 1rem; font-size: 1.5rem; }
+        h2 { margin-bottom: 0.5rem; font-size: 1.1rem; color: #555; }
+
+        .upload-section { background: #fff; border-radius: 8px; padding: 1.5rem; margin-bottom: 1rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .upload-section input[type="file"] { margin-right: 0.5rem; }
+        .upload-section input[type="text"] { padding: 0.4rem 0.8rem; border: 1px solid #ddd; border-radius: 4px; width: 200px; margin-right: 0.5rem; }
+        button { padding: 0.5rem 1rem; border: none; border-radius: 4px; cursor: pointer; font-size: 0.9rem; }
+        .btn-primary { background: #2563eb; color: #fff; }
+        .btn-primary:hover { background: #1d4ed8; }
+        .btn-success { background: #16a34a; color: #fff; }
+        .btn-success:hover { background: #15803d; }
+        .btn-danger { background: #dc2626; color: #fff; }
+        .btn-danger:hover { background: #b91c1c; }
+        .btn-primary:disabled { background: #93c5fd; cursor: not-allowed; }
+
+        .preview-section { display: none; }
+        .preview-section.active { display: block; }
+        .preview-panels { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem; }
+        .panel { background: #fff; border-radius: 8px; padding: 1rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .panel pre { white-space: pre-wrap; word-wrap: break-word; font-size: 0.85rem; line-height: 1.5; max-height: 500px; overflow-y: auto; }
+        .panel textarea { width: 100%; min-height: 500px; font-family: monospace; font-size: 0.85rem; line-height: 1.5; border: 1px solid #ddd; border-radius: 4px; padding: 0.5rem; resize: vertical; }
+        .panel-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; }
+
+        .entity-tag { display: inline-block; background: #fef3c7; border: 1px solid #f59e0b; border-radius: 3px; padding: 0.1rem 0.3rem; font-size: 0.75rem; margin: 0.1rem; }
+        .entity-tag.person { background: #dbeafe; border-color: #3b82f6; }
+        .entity-tag.email { background: #dcfce7; border-color: #22c55e; }
+        .entity-tag.phone { background: #fce7f3; border-color: #ec4899; }
+        .entity-tag.location { background: #e0e7ff; border-color: #6366f1; }
+
+        .entities-summary { background: #fff; border-radius: 8px; padding: 1rem; margin-bottom: 1rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .actions { display: flex; gap: 0.5rem; margin-bottom: 1rem; }
+
+        .resume-list { margin-top: 1rem; }
+        .resume-item { background: #fff; border-radius: 8px; padding: 1rem; margin-bottom: 0.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1); display: flex; justify-content: space-between; align-items: center; }
+        .resume-item .name { font-weight: 600; }
+        .resume-item .date { color: #888; font-size: 0.85rem; }
+
+        .hidden { display: none; }
+        .status { padding: 0.5rem; border-radius: 4px; margin-bottom: 1rem; }
+        .status.success { background: #dcfce7; color: #166534; }
+        .status.error { background: #fee2e2; color: #991b1b; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Resume Upload — PII Redaction Preview</h1>
+        <p style="color: #666; margin-bottom: 1rem;">Your original resume never leaves this machine. Only the redacted version gets uploaded to the cloud.</p>
+
+        <div id="status-msg" class="status hidden"></div>
+
+        <!-- Upload -->
+        <div class="upload-section">
+            <input type="file" id="resume-file" accept=".pdf,.txt,.docx">
+            <button class="btn-primary" onclick="previewResume()" id="preview-btn">Preview Redaction</button>
+        </div>
+
+        <!-- Preview -->
+        <div id="preview-section" class="preview-section">
+            <div class="entities-summary" id="entities-summary"></div>
+
+            <div class="preview-panels">
+                <div class="panel">
+                    <div class="panel-header">
+                        <h2>Original (stays local)</h2>
+                        <button class="btn-primary" onclick="toggleOriginal()" style="font-size:0.8rem; padding:0.3rem 0.6rem;">Show/Hide</button>
+                    </div>
+                    <pre id="original-text" class="hidden" style="filter: blur(0px);"></pre>
+                </div>
+                <div class="panel">
+                    <div class="panel-header">
+                        <h2>Redacted (editable — this goes to cloud)</h2>
+                    </div>
+                    <textarea id="redacted-text"></textarea>
+                </div>
+            </div>
+
+            <div class="actions">
+                <input type="text" id="resume-name" placeholder="Resume name (e.g. Backend Focus)" style="padding:0.5rem; border:1px solid #ddd; border-radius:4px; width:250px;">
+                <button class="btn-success" onclick="approveResume()">Approve & Upload</button>
+                <button class="btn-danger" onclick="rejectResume()">Reject & Start Over</button>
+            </div>
+        </div>
+
+        <!-- Existing Resumes -->
+        <h2 style="margin-top: 1.5rem;">Uploaded Resumes</h2>
+        <div id="resume-list" class="resume-list"></div>
+    </div>
+
+    <script>
+        const API = '';
+
+        async function apiFetch(path, options = {}) {
+            const resp = await fetch(API + path, {
+                headers: { 'Content-Type': 'application/json', ...options.headers },
+                ...options,
+            });
+            if (!resp.ok) {
+                const err = await resp.json().catch(() => ({ detail: resp.statusText }));
+                throw new Error(err.detail || resp.statusText);
+            }
+            return resp.json();
+        }
+
+        function showStatus(msg, type) {
+            const el = document.getElementById('status-msg');
+            el.textContent = msg;
+            el.className = `status ${type}`;
+            el.classList.remove('hidden');
+            setTimeout(() => el.classList.add('hidden'), 5000);
+        }
+
+        async function previewResume() {
+            const file = document.getElementById('resume-file').files[0];
+            if (!file) return showStatus('Please select a file.', 'error');
+
+            const btn = document.getElementById('preview-btn');
+            btn.disabled = true;
+            btn.textContent = 'Processing...';
+
+            try {
+                const formData = new FormData();
+                formData.append('file', file);
+
+                const resp = await fetch('/upload/preview', {
+                    method: 'POST',
+                    body: formData,
+                });
+                if (!resp.ok) {
+                    const err = await resp.json().catch(() => ({}));
+                    throw new Error(err.detail || 'Preview failed');
+                }
+                const data = await resp.json();
+
+                document.getElementById('original-text').textContent = data.original;
+                document.getElementById('redacted-text').value = data.redacted;
+                // Default to generic name — don't use filename (may contain PII)
+                const resumeCount = document.querySelectorAll('.resume-item').length;
+                document.getElementById('resume-name').value = `Resume ${resumeCount + 1}`;
+
+                // Show entities summary
+                const summary = document.getElementById('entities-summary');
+                if (data.entities.length === 0) {
+                    summary.innerHTML = '<strong>No PII detected.</strong> The resume appears clean.';
+                } else {
+                    const counts = {};
+                    data.entities.forEach(e => { counts[e.type] = (counts[e.type] || 0) + 1; });
+                    let html = `<strong>${data.entities.length} PII entities detected and redacted:</strong><br>`;
+                    for (const [type, count] of Object.entries(counts)) {
+                        const cls = type.toLowerCase().includes('person') ? 'person' :
+                                    type.toLowerCase().includes('email') ? 'email' :
+                                    type.toLowerCase().includes('phone') ? 'phone' :
+                                    type.toLowerCase().includes('location') ? 'location' : '';
+                        html += `<span class="entity-tag ${cls}">${type}: ${count}</span> `;
+                    }
+                    summary.innerHTML = html;
+                }
+
+                document.getElementById('preview-section').classList.add('active');
+            } catch (e) {
+                showStatus(e.message, 'error');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Preview Redaction';
+            }
+        }
+
+        function toggleOriginal() {
+            document.getElementById('original-text').classList.toggle('hidden');
+        }
+
+        async function approveResume() {
+            const name = document.getElementById('resume-name').value.trim();
+            const redacted = document.getElementById('redacted-text').value;
+            if (!name) return showStatus('Please enter a resume name.', 'error');
+            if (!redacted.trim()) return showStatus('Redacted text is empty.', 'error');
+
+            try {
+                const result = await apiFetch('/upload/approve', {
+                    method: 'POST',
+                    body: JSON.stringify({ name, redacted_text: redacted }),
+                });
+                showStatus(`Resume "${result.name}" uploaded successfully!`, 'success');
+                document.getElementById('preview-section').classList.remove('active');
+                document.getElementById('resume-file').value = '';
+                loadResumes();
+            } catch (e) {
+                showStatus(e.message, 'error');
+            }
+        }
+
+        function rejectResume() {
+            document.getElementById('preview-section').classList.remove('active');
+            document.getElementById('resume-file').value = '';
+            showStatus('Resume rejected. Upload a new file.', 'error');
+        }
+
+        async function loadResumes() {
+            try {
+                const resumes = await apiFetch('/resumes');
+                const list = document.getElementById('resume-list');
+                if (!resumes.length) {
+                    list.innerHTML = '<p style="color:#888; padding:1rem;">No resumes uploaded yet.</p>';
+                    return;
+                }
+                list.innerHTML = resumes.map(r => `
+                    <div class="resume-item">
+                        <div>
+                            <span class="name">${r.name}</span>
+                            <span class="date"> — ${new Date(r.uploaded_at).toLocaleDateString()}</span>
+                        </div>
+                        <div>
+                            <button class="btn-primary" onclick="viewResume(${r.id})" style="font-size:0.8rem; padding:0.3rem 0.6rem;">View</button>
+                            <button class="btn-danger" onclick="deleteResume(${r.id}, '${r.name}')" style="font-size:0.8rem; padding:0.3rem 0.6rem; margin-left:0.25rem;">Delete</button>
+                        </div>
+                    </div>
+                `).join('');
+            } catch (e) {
+                console.error('Failed to load resumes:', e);
+            }
+        }
+
+        async function viewResume(id) {
+            try {
+                const data = await apiFetch(`/resumes/${id}/text`);
+                document.getElementById('original-text').textContent = '';
+                document.getElementById('redacted-text').value = data.text;
+                document.getElementById('entities-summary').innerHTML = '<strong>Viewing stored resume (already redacted)</strong>';
+                document.getElementById('preview-section').classList.add('active');
+            } catch (e) {
+                showStatus(e.message, 'error');
+            }
+        }
+
+        async function deleteResume(id, name) {
+            if (!confirm(`Delete "${name}"? This removes it from the database and S3.`)) return;
+            try {
+                await fetch(`/resumes/${id}`, { method: 'DELETE' });
+                showStatus(`Resume "${name}" deleted.`, 'success');
+                loadResumes();
+            } catch (e) {
+                showStatus(e.message, 'error');
+            }
+        }
+
+        // Load resumes on page load
+        loadResumes();
+    </script>
+</body>
+</html>

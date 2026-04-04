@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Job Search Intelligence Platform</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div id="app">
+        <!-- Login -->
+        <div id="login-view" class="view">
+            <div class="login-box">
+                <h1>Job Search Platform</h1>
+                <input type="password" id="login-password" placeholder="Password">
+                <button onclick="login()">Login</button>
+                <p id="login-error" class="error"></p>
+            </div>
+        </div>
+
+        <!-- Main -->
+        <div id="main-view" class="view hidden">
+            <nav>
+                <h2>Job Search Platform</h2>
+                <div class="nav-links">
+                    <a href="#" onclick="showTab('jobs')" class="active" data-tab="jobs">Jobs</a>
+                    <a href="#" onclick="showTab('followups')" data-tab="followups">Follow-ups</a>
+                    <a href="#" onclick="showTab('deadlines')" data-tab="deadlines">Deadlines</a>
+                    <a href="#" onclick="showTab('chat')" data-tab="chat">Chat</a>
+                    <a href="#" onclick="showTab('ops')" data-tab="ops">Pipeline Ops</a>
+                    <a href="#" onclick="showTab('resumes')" data-tab="resumes">Resumes</a>
+                    <a href="#" onclick="showTab('queue')" data-tab="queue">Review Queue <span id="queue-badge" class="badge hidden">0</span></a>
+                </div>
+            </nav>
+
+            <!-- Jobs Tab -->
+            <div id="tab-jobs" class="tab-content">
+                <div class="controls">
+                    <select id="job-sort" onchange="loadJobs()">
+                        <option value="date">Newest First</option>
+                        <option value="match">Best Match</option>
+                    </select>
+                    <select id="job-resume" onchange="loadJobs()" class="hidden">
+                        <!-- populated dynamically -->
+                    </select>
+                    <select id="job-status" onchange="loadJobs()">
+                        <option value="">All Statuses</option>
+                        <option value="to_apply">To Apply</option>
+                        <option value="waiting_for_referral">Waiting for Referral</option>
+                        <option value="applied">Applied</option>
+                        <option value="assessment">Assessment</option>
+                        <option value="assignment">Assignment</option>
+                        <option value="interview">Interview</option>
+                        <option value="offer">Offer</option>
+                        <option value="rejected">Rejected</option>
+                    </select>
+                    <select id="job-posted-after" onchange="loadJobs()">
+                        <option value="">All Time</option>
+                        <option value="1d">Last 24 Hours</option>
+                        <option value="7d">Last Week</option>
+                        <option value="14d">Last 2 Weeks</option>
+                        <option value="30d">Last Month</option>
+                    </select>
+                    <button onclick="toggleBlocklist()" class="btn-small">Blocklist</button>
+                </div>
+                <div id="blocklist-panel" class="hidden" style="padding: 0.5rem 1rem; background: var(--bg-secondary, #f5f5f5); border-radius: 6px; margin-bottom: 1rem;">
+                    <label>Block companies (comma-separated):</label>
+                    <input type="text" id="blocklist-companies" placeholder="e.g. Palantir, Lockheed Martin" style="width: 100%; margin: 0.25rem 0;">
+                    <label>Block title keywords (comma-separated):</label>
+                    <input type="text" id="blocklist-titles" placeholder="e.g. hardware, quant, mechanical" style="width: 100%; margin: 0.25rem 0;">
+                    <button onclick="saveBlocklist()" class="btn-small" style="margin-top: 0.25rem;">Save</button>
+                </div>
+                <div id="jobs-list" class="card-list"></div>
+            </div>
+
+            <!-- Follow-ups Tab -->
+            <div id="tab-followups" class="tab-content hidden">
+                <div class="controls">
+                    <select id="followup-urgency" onchange="loadFollowups()">
+                        <option value="">All Urgencies</option>
+                        <option value="high">High</option>
+                        <option value="medium">Medium</option>
+                        <option value="low">Low</option>
+                    </select>
+                </div>
+                <div id="followups-list" class="card-list"></div>
+            </div>
+
+            <!-- Deadlines Tab -->
+            <div id="tab-deadlines" class="tab-content hidden">
+                <div id="deadlines-list" class="card-list"></div>
+            </div>
+
+            <!-- Chat Tab -->
+            <div id="tab-chat" class="tab-content hidden">
+                <div class="controls">
+                    <select id="chat-job-select">
+                        <option value="">Select a job...</option>
+                    </select>
+                </div>
+                <div class="chat-container" id="chat-messages">
+                    <p class="card-meta" style="padding:16px">Select a job to start chatting.</p>
+                </div>
+                <div class="chat-input-area">
+                    <input type="text" id="chat-input" class="chat-input" placeholder="Ask a question about this job..." disabled>
+                    <button id="chat-send-btn" onclick="handleChatSend()" disabled>Send</button>
+                </div>
+            </div>
+
+            <!-- Pipeline Ops Tab -->
+            <div id="tab-ops" class="tab-content hidden">
+                <h3 style="padding:16px 24px 0;color:#8b949e;text-transform:uppercase;font-size:14px;letter-spacing:0.5px">Pipeline Metrics</h3>
+                <div id="ops-metrics" class="metrics-grid"></div>
+                <h3 style="padding:16px 24px 0;color:#8b949e;text-transform:uppercase;font-size:14px;letter-spacing:0.5px">Recent Runs</h3>
+                <div style="padding:0 24px 24px">
+                    <table class="runs-table" id="runs-table">
+                        <thead>
+                            <tr>
+                                <th>Event Type</th>
+                                <th>Agent Chain</th>
+                                <th>Status</th>
+                                <th>Started</th>
+                                <th>Duration</th>
+                            </tr>
+                        </thead>
+                        <tbody id="runs-tbody"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Resumes Tab -->
+            <div id="tab-resumes" class="tab-content hidden">
+                <div class="upload-section">
+                    <input type="file" id="resume-file" accept=".pdf,.txt,.docx">
+                    <input type="text" id="resume-name" placeholder="Resume name (e.g. Backend Focus)">
+                    <button onclick="uploadResume()">Upload</button>
+                </div>
+                <div id="resumes-list" class="card-list"></div>
+            </div>
+
+            <!-- Review Queue Tab -->
+            <div id="tab-queue" class="tab-content hidden">
+                <div id="queue-metrics" class="metrics-bar">
+                    <span>Auto-classified: <strong id="metric-auto">0</strong></span>
+                    <span>User-corrected: <strong id="metric-user">0</strong></span>
+                    <span>Accuracy: <strong id="metric-accuracy">-</strong></span>
+                    <span>Queue depth: <strong id="metric-depth">0</strong></span>
+                </div>
+                <div id="queue-list" class="card-list"></div>
+                <p id="queue-empty" class="empty-state hidden">No items in queue. All emails classified.</p>
+            </div>
+
+            <!-- Job Detail Modal -->
+            <div id="job-modal" class="modal hidden">
+                <div class="modal-content">
+                    <span class="close" onclick="closeModal()">&times;</span>
+                    <div id="job-detail"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script src="/static/app.js"></script>
+</body>
+</html>

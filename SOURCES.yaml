@@ -1,0 +1,275 @@
+# SOURCES.yaml — External Sources Registry
+# Machine-readable. Validated by tests/test_source_registry.py
+# Last reviewed: 2026-04-02
+#
+# This is the source of truth for all external data sources, AWS services,
+# and their compliance status. Before enabling a new source adapter, it
+# MUST be registered here with tos_status: compliant.
+
+# =============================================================================
+# Job Source Adapters
+# =============================================================================
+
+sources:
+  # --- Tier 1: Active daily (EventBridge scheduled) ---
+
+  the_muse:
+    type: job_board_api
+    url: https://www.themuse.com/api/public/jobs
+    auth: none
+    tos_url: https://www.themuse.com/api
+    tos_status: compliant
+    tos_reviewed: 2026-03-30
+    schedule: daily_6am_utc
+    tier: 1
+    adapter_file: api/agents/jd_ingestion/adapters/the_muse.py
+    eventbridge_rule: job-search-platform-daily-the_muse
+    notes: "Official public API, no key required. Category=Engineering filter."
+
+  simplify:
+    type: github_json_feed
+    url: https://raw.githubusercontent.com/SimplifyJobs/New-Grad-Positions/dev/.github/scripts/listings.json
+    auth: none
+    tos_url: https://github.com/SimplifyJobs/Summer2025-Internships
+    tos_status: compliant
+    tos_reviewed: 2026-03-30
+    schedule: daily_6am_utc
+    tier: 1
+    adapter_file: api/agents/jd_ingestion/adapters/simplify.py
+    eventbridge_rule: job-search-platform-daily-simplify
+    notes: "Published GitHub JSON feed. Filters: active=True, sponsorship='Offers Sponsorship'."
+
+  # --- Tier 2: Active monthly (EventBridge scheduled) ---
+
+  hn_hiring:
+    type: public_api
+    url: https://hn.algolia.com/api/v1/search
+    secondary_url: https://hn.algolia.com/api/v1/items/{thread_id}
+    auth: none
+    tos_url: https://github.com/algolia/hn-search
+    tos_status: compliant
+    tos_reviewed: 2026-04-02
+    schedule: monthly_1st_9am_utc
+    tier: 2
+    adapter_file: api/agents/jd_ingestion/adapters/hn_hiring.py
+    eventbridge_rule: job-search-platform-monthly-hn
+    notes: >
+      Algolia HN Search API — free public API by Algolia (open-source: github.com/algolia/hn-search).
+      No auth required. 10,000 req/hour rate limit. We use ~2 requests/month.
+      Reviewed 2026-04-02: no TOS restrictions found, widely used by third-party tools.
+
+  # --- Tier 3: On-demand (manual SQS trigger with company slug) ---
+
+  greenhouse:
+    type: ats_board_api
+    url: https://boards-api.greenhouse.io/v1/boards/{company_slug}/jobs
+    auth: none
+    tos_url: https://www.greenhouse.com/terms-of-service
+    tos_status: compliant
+    tos_reviewed: 2026-03-30
+    schedule: on_demand
+    tier: 3
+    adapter_file: api/agents/jd_ingestion/adapters/greenhouse.py
+    eventbridge_rule: null
+    notes: "Official public board API. Requires company_slug parameter."
+
+  lever:
+    type: ats_board_api
+    url: https://api.lever.co/v0/postings/{company_slug}?mode=json
+    auth: none
+    tos_url: https://www.lever.co/terms-of-service
+    tos_status: compliant
+    tos_reviewed: 2026-03-30
+    schedule: on_demand
+    tier: 3
+    adapter_file: api/agents/jd_ingestion/adapters/lever.py
+    eventbridge_rule: null
+    notes: "Official public board API. Requires company_slug parameter."
+
+  ashby:
+    type: ats_board_api
+    url: https://api.ashbyhq.com/posting-api/job-board/{company_slug}
+    auth: none
+    tos_url: https://www.ashbyhq.com/terms-of-service
+    tos_status: compliant
+    tos_reviewed: 2026-03-30
+    schedule: on_demand
+    tier: 3
+    adapter_file: api/agents/jd_ingestion/adapters/ashby.py
+    eventbridge_rule: null
+    notes: "Official public board API. Requires company_slug parameter."
+
+  # --- Disabled: require API key registration ---
+
+  adzuna:
+    type: job_board_api
+    url: https://api.adzuna.com/v1/api/jobs/us/search/{page}
+    auth: api_key
+    auth_env_vars: [ADZUNA_APP_ID, ADZUNA_APP_KEY]
+    tos_url: https://developer.adzuna.com/terms
+    tos_status: compliant
+    tos_reviewed: 2026-03-30
+    schedule: disabled
+    tier: disabled
+    adapter_file: api/agents/jd_ingestion/adapters/adzuna.py
+    eventbridge_rule: null
+    notes: "Official API. Free tier: 250 calls/day. Adapter exists but not in ADAPTERS dict (keys not configured)."
+
+  usajobs:
+    type: government_api
+    url: https://data.usajobs.gov/api/search
+    auth: api_key
+    auth_env_vars: [USAJOBS_API_KEY, USAJOBS_EMAIL]
+    tos_url: https://developer.usajobs.gov/API-Reference/GET-api-Search
+    tos_status: compliant
+    tos_reviewed: 2026-03-30
+    schedule: disabled
+    tier: disabled
+    adapter_file: api/agents/jd_ingestion/adapters/usajobs.py
+    eventbridge_rule: null
+    notes: "US Government API. Free with registration. Adapter exists but not in ADAPTERS dict."
+
+  # --- Blacklisted: DO NOT re-enable without TOS review ---
+
+  remoteok:
+    type: undocumented_endpoint
+    url: https://remoteok.com/api
+    auth: none
+    tos_status: non_compliant
+    tos_reviewed: 2026-03-30
+    schedule: disabled
+    tier: blacklisted
+    adapter_file: api/agents/jd_ingestion/adapters/remoteok.py
+    eventbridge_rule: null
+    reason_disabled: >
+      Actively blocks automated access (HTTP 403).
+      No documented API TOS. Undocumented JSON endpoint.
+      DO NOT re-enable without explicit TOS review.
+
+  jsearch:
+    type: rapidapi_wrapper
+    url: https://jsearch.p.rapidapi.com/search
+    auth: api_key
+    auth_env_vars: [RAPIDAPI_KEY]
+    tos_status: non_compliant
+    tos_reviewed: 2026-03-30
+    schedule: disabled
+    tier: blacklisted
+    adapter_file: api/agents/jd_ingestion/adapters/jsearch.py
+    eventbridge_rule: null
+    reason_disabled: >
+      Third-party RapidAPI wrapper around Google Jobs.
+      Google does not officially license this aggregation.
+      Extremely limited free tier (100 calls/month).
+      DO NOT re-enable.
+
+# =============================================================================
+# Gmail API
+# =============================================================================
+
+gmail:
+  type: oauth_api
+  url: https://www.googleapis.com/gmail/v1/users/me/messages
+  auth: oauth2
+  scope: gmail.readonly
+  scope_enforcement: "verify_gmail_scope() at startup in local/gmail/auth.py"
+  tos_url: https://developers.google.com/gmail/api/guides
+  tos_status: compliant
+  tos_reviewed: 2026-03-30
+  schedule: every_2h_local
+  location: local_only
+  notes: >
+    Read-only scope ONLY. Credentials from Secrets Manager (prod) or .env (local).
+    Email bodies NEVER leave local Docker container (PII boundary rule).
+    token.json mounted read-only, never committed to git.
+
+# =============================================================================
+# AWS Services
+# =============================================================================
+
+aws_services:
+  bedrock:
+    models:
+      haiku:
+        model_id: "us.anthropic.claude-haiku-4-5-20251001-v1:0"
+        purpose: "Cheap/fast model for parsing, classification, extraction"
+        constant_name: HAIKU
+        constant_file: api/agents/bedrock_client.py
+        constant_line: 24
+        iam_arn_pattern: "arn:aws:bedrock:*::foundation-model/anthropic.claude-haiku-4-5-*"
+        status: Active
+      sonnet:
+        model_id: "us.anthropic.claude-sonnet-4-6"
+        purpose: "Capable model for reasoning, scoring, reranking"
+        constant_name: SONNET
+        constant_file: api/agents/bedrock_client.py
+        constant_line: 25
+        iam_arn_pattern: "arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-6*"
+        status: Active
+      titan_embeddings:
+        model_id: "amazon.titan-embed-text-v2:0"
+        purpose: "Embedding model for Bedrock Knowledge Base"
+        status: "Managed by Bedrock KB, not invoked directly"
+    knowledge_base:
+      kb_id_env_var: BEDROCK_KB_ID
+      kb_id_default: ""  # Set via BEDROCK_KB_ID env var or terraform.tfvars
+      data_source: "s3://{S3_BUCKET}/jds/ prefix"
+      embedding_model: amazon.titan-embed-text-v2:0
+
+  s3:
+    bucket_name_env_var: S3_BUCKET
+    prefixes:
+      jds: "JD text storage (content-addressable by SHA-256 hash)"
+      resumes: "PII-redacted resume text"
+
+  sqs:
+    queue_name: job-search-platform-jd-scrape-queue
+    dlq_name: job-search-platform-jd-scrape-dlq
+    visibility_timeout: 300
+    max_receive_count: 3
+
+  secrets_manager:
+    secret_name_env_var: SECRET_NAME  # pragma: allowlist secret
+    contains: [DATABASE_URL, JWT_SECRET, INGEST_HMAC_KEY, APP_PASSWORD]
+    access: "VPC Interface Endpoint (no internet required)"
+
+  cloudwatch:
+    log_groups:
+      ecs: "/ecs/job-search-platform"
+      lambda_fetch: "/aws/lambda/job-search-platform-fetch"
+      lambda_persist: "/aws/lambda/job-search-platform-persist"
+    retention: 14_days
+
+  eventbridge:
+    rules:
+      monthly_hn: "cron(0 9 1 * ? *)"
+      daily_the_muse: "cron(0 6 * * ? *)"
+      daily_simplify: "cron(0 6 * * ? *)"
+
+# =============================================================================
+# Local Services (Docker Compose)
+# =============================================================================
+
+local_services:
+  ollama:
+    url_env_var: OLLAMA_BASE_URL
+    default_url: http://localhost:11434
+    model: phi3:mini
+    purpose: "Local LLM for email classification, stage classification, extraction"
+
+  chromadb:
+    host_env_var: CHROMADB_HOST
+    port_env_var: CHROMADB_PORT
+    default: "localhost:8000"
+    collections: [email_classifications, stage_classifications]
+    purpose: "Few-shot vector store for local agents"
+
+  mlflow:
+    url_env_var: MLFLOW_TRACKING_URI
+    default_url: http://localhost:5001
+    purpose: "Experiment tracking for agent metrics"
+
+  onnx:
+    model_path_env_var: ONNX_MODEL_PATH
+    model: all-MiniLM-L6-v2
+    purpose: "Local embedding model for ChromaDB and embedding_cache"

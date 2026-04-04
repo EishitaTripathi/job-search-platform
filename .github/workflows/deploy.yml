@@ -1,0 +1,91 @@
+name: Test, Build, Deploy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  AWS_REGION: us-east-2
+  ECR_REPOSITORY: job-search-platform
+  ECS_CLUSTER: job-search-platform-retried
+  ECS_SERVICE: job-search-platform
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.5.7"
+
+      - name: Install dependencies
+        run: |
+          pip install -r api/requirements.txt
+          pip install -r requirements.lambda.txt
+          pip install pytest pytest-asyncio httpx pydantic mlflow pre-commit pip-audit
+
+      - name: Run pre-commit hooks
+        run: pre-commit run --all-files
+
+      - name: Audit dependencies for known vulnerabilities
+        run: pip-audit -r api/requirements.txt
+
+      - name: Run tests
+        run: pytest tests/ -v -p no:flask
+
+      - name: Validate Terraform
+        run: |
+          cd infra
+          terraform init -backend=false
+          terraform validate
+
+  deploy:
+    needs: test
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build, tag, push image
+        env:
+          ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build --platform linux/amd64 -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+
+      # Lambda Fetch + Persist REMOVED — JD ingestion now runs in ECS.
+      # SQS is consumed directly by the ECS task's background polling loop.
+      # See api/agents/jd_ingestion/ for the replacement agent.
+
+      - name: Deploy to ECS
+        run: |
+          aws ecs update-service \
+            --cluster $ECS_CLUSTER \
+            --service $ECS_SERVICE \
+            --force-new-deployment

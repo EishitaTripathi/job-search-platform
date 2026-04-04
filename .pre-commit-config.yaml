@@ -1,0 +1,36 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: check-added-large-files
+        args: ['--maxkb=500']
+      - id: check-yaml
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
+        args: ['--baseline', '.secrets.baseline']
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.8.0
+    hooks:
+      - id: ruff
+      - id: ruff-format
+
+  - repo: local
+    hooks:
+      - id: block-secrets-files
+        name: Block secret files
+        entry: "bash -c 'echo Blocked >&2 && exit 1'"
+        language: system
+        files: "(token\\.json|credentials\\.json|\\.env$|\\.env\\.|pii_audit\\.jsonl|\\.pem$|\\.key$|\\.tfstate)"
+        exclude: "\\.env\\.example$"
+
+      - id: block-internal-docs
+        name: Block internal docs from commit
+        entry: "bash -c 'echo \"BLOCKED: Internal docs must not be committed. Check .gitignore.\" >&2 && exit 1'"
+        language: system
+        files: "(DEPLOYMENT_AUDIT\\.md|LOCAL_ISSUES\\.md|docs/adr/)"

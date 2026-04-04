@@ -1,0 +1,66 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "prompt",
+            "prompt": "Analyze this user request and determine which guardrail documents Claude MUST read before proceeding. Categories: 1) feature/change -> REQUIREMENTS.md (identify affected FR-*/NFR-*/ARCH-* IDs, present to user before implementing). 2) debug/error -> DEPENDENCIES.md (blast radius) + RUNBOOK.md (playbook). 3) aws/terraform/infra -> AWS_STATE.md (internet exposure map, safety rules, sensitive file list). 4) adapter/source changes -> SOURCES.yaml (TOS status, must be compliant). 5) security-relevant -> SECURITY.md (controls matrix). 6) schema/database -> infra/SCHEMA_TYPES.md + infra/schema.sql. 7) policy decision (IAM, models, SG) -> docs/adr/ (check existing, create new). Output format: 'BEFORE PROCEEDING: Read [file1], [file2]. This request affects [area]. Key requirements: [FR-X.Y.Z, NFR-X.Y.Z].' If the request is a simple question needing no guardrails, output: 'No guardrail docs needed.'"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Read",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/block-sensitive-reads.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/aws-safety.sh"
+          },
+          {
+            "type": "command",
+            "command": ".claude/hooks/pre-commit-audit.sh"
+          },
+          {
+            "type": "command",
+            "command": ".claude/hooks/pre-push-audit.sh"
+          },
+          {
+            "type": "prompt",
+            "prompt": "If this is a 'git commit' command, remind Claude to verify these before committing (informational, do not block): 1) Auth on all /api/* endpoints 2) sanitize_for_prompt() on LLM calls 3) enforce_pii_boundary() on RDS writes 4) README.md current 5) No unauthed endpoints. Respond ALLOW always — the automated pre-commit-audit.sh handles blocking."
+          }
+        ]
+      },
+      {
+        "matcher": "Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/schema-type-warning.sh"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/adapter-reminder.sh"
+          }
+        ]
+      }
+    ]
+  }
+}

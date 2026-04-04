@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>System Debug Dashboard</title>
+    <link rel="stylesheet" href="/static/debug_style.css">
+</head>
+<body>
+    <header class="top-bar">
+        <div class="top-bar-left">
+            <h1>System Debug Dashboard</h1>
+            <a href="/static/index.html" class="back-link">Main Dashboard</a>
+        </div>
+        <div class="top-bar-right">
+            <button id="view-toggle" class="view-toggle" onclick="toggleView()">Errors Only</button>
+            <span id="last-refresh" class="last-refresh">--</span>
+            <button id="refresh-btn" class="refresh-btn" onclick="refresh()">Refresh</button>
+        </div>
+    </header>
+
+    <div id="summary-bar" class="summary-bar">
+        <span class="summary-loading">Loading system status...</span>
+    </div>
+
+    <main class="main-area">
+        <div id="graph-container" class="graph-container"></div>
+        <div id="error-summary" class="error-summary hidden"></div>
+        <div id="detail-drawer" class="detail-drawer hidden">
+            <div class="drawer-header">
+                <span id="drawer-title" class="drawer-title"></span>
+                <button class="drawer-close" onclick="closeDrawer()">&times;</button>
+            </div>
+            <div id="drawer-content" class="drawer-content"></div>
+        </div>
+    </main>
+
+    <script src="https://unpkg.com/cytoscape@3.30.4/dist/cytoscape.min.js"></script>
+    <script src="https://unpkg.com/dagre@0.8.5/dist/dagre.min.js"></script>
+    <script src="https://unpkg.com/cytoscape-dagre@2.5.0/cytoscape-dagre.js"></script>
+    <script src="/static/debug_app.js"></script>
+</body>
+</html>

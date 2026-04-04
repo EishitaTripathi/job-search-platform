@@ -1,0 +1,27 @@
+FROM python:3.11-slim
+
+# Security: non-root user (CLAUDE.md requirement)
+RUN groupadd -r appuser && useradd -r -g appuser -d /app -s /sbin/nologin appuser
+
+WORKDIR /app
+
+# Install system deps for spaCy, psycopg2, and python-magic
+RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
+    build-essential \
+    libmagic1 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Python deps
+COPY requirements.local.txt .
+RUN pip install --no-cache-dir -r requirements.local.txt
+
+# Download spaCy model for Presidio PII redaction
+RUN python -m spacy download en_core_web_lg
+
+# Copy application code
+COPY local/ ./local/
+
+# Switch to non-root user
+USER appuser
+
+CMD ["python", "-m", "local.main"]

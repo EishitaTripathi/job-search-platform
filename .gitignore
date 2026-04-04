@@ -1,0 +1,61 @@
+# === Secrets and credentials ===
+token.json
+credentials.json
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# === PII and audit logs ===
+pii_audit.jsonl
+
+# === ML artifacts ===
+mlruns/
+local/models/
+
+# === Terraform ===
+.terraform/
+*.tfstate
+*.tfstate.backup
+*.tfvars
+*.tfvars.json
+.terraform.lock.hcl
+infra/lambda_placeholder.zip
+infra/plan_output*.txt
+infra/import.sh
+
+# === Lambda build artifacts ===
+lambda/*/package/
+
+# === Python ===
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+
+# === OS ===
+.DS_Store
+Thumbs.db
+
+# === IDE ===
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# === Internal docs (not for public repo) ===
+CONTEXT.md
+ARCHITECTURE.md
+CLAUDE.md
+SECURITY.md
+RUNBOOK.md
+AWS_STATE.md
+WORK_REPORT_*.md
+DEPLOYMENT_AUDIT.md
+LOCAL_ISSUES.md
+docs/adr/
