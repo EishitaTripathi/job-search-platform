@@ -10,7 +10,7 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
-COMPANY_REGEX = re.compile(r"^[a-zA-Z0-9\s.,&'()\-]+$")
+COMPANY_REGEX = re.compile(r"^[a-zA-Z0-9\s.,&'()\-/!:;#+@\u2013\u2014]+$")
 
 
 class StatusPayload(BaseModel):
