@@ -72,6 +72,23 @@ async def auto_store_node(state: EmailState) -> dict:
         confirmed_by="auto",
     )
 
+    # Store body in labeling_queue (resolved) so re-label can re-route later
+    from local.agents.shared.db import acquire
+
+    async with acquire() as conn:
+        await conn.execute(
+            """
+            INSERT INTO labeling_queue (email_id, subject, snippet, body, guessed_stage, resolved)
+            VALUES ($1, $2, $3, $4, $5, TRUE)
+            ON CONFLICT (email_id) DO NOTHING
+            """,
+            state["email_id"],
+            state["subject"],
+            state["snippet"],
+            state["body"],
+            state["label"],
+        )
+
     # Determine downstream action based on label
     label = state["label"]
     if label == "status_update":
