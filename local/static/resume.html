@@ -98,6 +98,12 @@
         .status-badge.completed { background: #dcfce7; color: #166534; }
         .status-badge.failed { background: #fee2e2; color: #991b1b; }
         .status-badge.running { background: #dbeafe; color: #1e40af; }
+
+        /* Filter pills */
+        .filter-bar { display: flex; flex-wrap: wrap; gap: 0.25rem; align-items: center; }
+        .filter-pill { padding: 0.2rem 0.6rem; border: 1px solid #ddd; border-radius: 12px; background: #fff; font-size: 0.75rem; cursor: pointer; color: #666; }
+        .filter-pill:hover { border-color: #2563eb; color: #2563eb; }
+        .filter-pill.active { background: #2563eb; color: #fff; border-color: #2563eb; }
     </style>
 </head>
 <body>
@@ -174,16 +180,45 @@
                 </div>
             </div>
 
-            <!-- Pending Review -->
+            <!-- Pending Review (low-confidence, in labeling queue) -->
             <h2>Pending Review</h2>
             <div id="queue-list"></div>
             <p id="queue-empty" class="hidden" style="color:#888; padding:1rem;">No items pending. All emails have been reviewed.</p>
 
-            <!-- All Classifications -->
-            <h2 style="margin-top:1.5rem;">All Classifications</h2>
-            <p style="color:#666; font-size:0.85rem; margin-bottom:0.5rem;">Click a label to re-classify. Changes update ChromaDB and improve future accuracy.</p>
-            <div id="classifications-list"></div>
-            <p id="classifications-empty" class="hidden" style="color:#888; padding:1rem;">No emails classified yet.</p>
+            <!-- Not Reviewed (auto-classified, high-confidence but not human-verified) -->
+            <h2 style="margin-top:1.5rem;">Not Reviewed <span id="unreviewed-count" style="font-size:0.85rem; color:#888;"></span></h2>
+            <p style="color:#666; font-size:0.85rem; margin-bottom:0.5rem;">Auto-classified emails. Re-label to correct and re-route through the pipeline.</p>
+            <div class="filter-bar" style="margin-bottom:0.75rem;">
+                <span style="font-size:0.8rem; color:#888; margin-right:0.5rem;">Status:</span>
+                <button class="filter-pill active" data-group="unreviewed" onclick="setFilter('unreviewed', 'all', this)">All</button>
+                <button class="filter-pill" data-group="unreviewed" onclick="setFilter('unreviewed', 'applied', this)">Applied</button>
+                <button class="filter-pill" data-group="unreviewed" onclick="setFilter('unreviewed', 'assessment', this)">Assessment</button>
+                <button class="filter-pill" data-group="unreviewed" onclick="setFilter('unreviewed', 'assignment', this)">Assignment</button>
+                <button class="filter-pill" data-group="unreviewed" onclick="setFilter('unreviewed', 'interview', this)">Interview</button>
+                <button class="filter-pill" data-group="unreviewed" onclick="setFilter('unreviewed', 'offer', this)">Offer</button>
+                <button class="filter-pill" data-group="unreviewed" onclick="setFilter('unreviewed', 'rejected', this)">Rejected</button>
+                <button class="filter-pill" data-group="unreviewed" onclick="setFilter('unreviewed', 'recommendation', this)">Recommendation</button>
+                <button class="filter-pill" data-group="unreviewed" onclick="setFilter('unreviewed', 'irrelevant', this)">Irrelevant</button>
+            </div>
+            <div id="unreviewed-list"></div>
+            <p id="unreviewed-empty" class="hidden" style="color:#888; padding:1rem;">All auto-classified emails have been reviewed.</p>
+
+            <!-- Reviewed (user-confirmed) -->
+            <h2 style="margin-top:1.5rem;">Reviewed <span id="reviewed-count" style="font-size:0.85rem; color:#888;"></span></h2>
+            <div class="filter-bar" style="margin-bottom:0.75rem;">
+                <span style="font-size:0.8rem; color:#888; margin-right:0.5rem;">Status:</span>
+                <button class="filter-pill active" data-group="reviewed" onclick="setFilter('reviewed', 'all', this)">All</button>
+                <button class="filter-pill" data-group="reviewed" onclick="setFilter('reviewed', 'applied', this)">Applied</button>
+                <button class="filter-pill" data-group="reviewed" onclick="setFilter('reviewed', 'assessment', this)">Assessment</button>
+                <button class="filter-pill" data-group="reviewed" onclick="setFilter('reviewed', 'assignment', this)">Assignment</button>
+                <button class="filter-pill" data-group="reviewed" onclick="setFilter('reviewed', 'interview', this)">Interview</button>
+                <button class="filter-pill" data-group="reviewed" onclick="setFilter('reviewed', 'offer', this)">Offer</button>
+                <button class="filter-pill" data-group="reviewed" onclick="setFilter('reviewed', 'rejected', this)">Rejected</button>
+                <button class="filter-pill" data-group="reviewed" onclick="setFilter('reviewed', 'recommendation', this)">Recommendation</button>
+                <button class="filter-pill" data-group="reviewed" onclick="setFilter('reviewed', 'irrelevant', this)">Irrelevant</button>
+            </div>
+            <div id="reviewed-list"></div>
+            <p id="reviewed-empty" class="hidden" style="color:#888; padding:1rem;">No reviewed emails yet.</p>
         </div>
 
         <!-- ================================================================ -->
@@ -376,7 +411,7 @@
         }
 
         // ================================================================
-        // Tab 2: Queue Review + All Classifications
+        // Tab 2: Queue Review + Classifications
         // ================================================================
 
         const STAGE_OPTIONS = ['applied', 'assessment', 'assignment', 'interview', 'offer', 'rejected'];
@@ -465,50 +500,71 @@
             } catch (e) { showStatus(e.message, 'error'); }
         }
 
-        // -- All Classifications --
-        function labelDisplayName(stage) {
-            if (['irrelevant', 'status_update', 'recommendation'].includes(stage)) return stage.replace('_', ' ');
-            return 'status update > ' + stage;
-        }
+        // -- Classifications (split: Not Reviewed / Reviewed) --
+        let _unreviewed = [];
+        let _reviewed = [];
+        const _filters = { unreviewed: 'all', reviewed: 'all' };
 
         async function loadClassifications() {
             try {
-                const items = await apiFetch('/api/classifications');
-                const list = document.getElementById('classifications-list');
-                const empty = document.getElementById('classifications-empty');
-
-                if (!items.length) {
-                    list.innerHTML = '';
-                    empty.classList.remove('hidden');
-                    return;
-                }
-                empty.classList.add('hidden');
-
-                list.innerHTML = items.map(c => `
-                    <div class="queue-card" id="cls-card-${c.id}">
-                        <div style="display:flex; justify-content:space-between; align-items:start; gap:1rem; flex-wrap:wrap;">
-                            <div style="flex:1; min-width:200px;">
-                                <div class="subject">${esc(c.subject)}</div>
-                                <div class="snippet">${esc(c.snippet || '')}</div>
-                            </div>
-                            <div style="text-align:right; flex-shrink:0;">
-                                <span class="stage-badge">${esc(c.stage)}</span>
-                                <span style="font-size:0.75rem; color:${c.confirmed_by === 'user' ? '#16a34a' : '#888'}; margin-left:4px;">${c.confirmed_by}</span>
-                            </div>
-                        </div>
-                        <div class="controls" id="cls-controls-${c.id}" style="margin-top:0.5rem;">
-                            <button class="btn-primary" onclick="showRelabel(${c.id})" style="padding:0.2rem 0.8rem; font-size:0.8rem;">Re-label</button>
-                        </div>
-                        <div class="controls hidden" id="cls-relabel-${c.id}" style="margin-top:0.5rem;">
-                            ${labelDropdownHtml('cls', c.id)}
-                            <button class="btn-success" onclick="submitRelabel(${c.id})" style="padding:0.3rem 1rem; font-size:0.85rem;">Save</button>
-                            <button class="btn-danger" onclick="cancelRelabel(${c.id})" style="padding:0.3rem 0.8rem; font-size:0.85rem;">Cancel</button>
-                        </div>
-                    </div>
-                `).join('');
+                const all = await apiFetch('/api/classifications');
+                _unreviewed = all.filter(c => c.confirmed_by === 'auto');
+                _reviewed = all.filter(c => c.confirmed_by === 'user');
+                document.getElementById('unreviewed-count').textContent = `(${_unreviewed.length})`;
+                document.getElementById('reviewed-count').textContent = `(${_reviewed.length})`;
+                renderSection('unreviewed', _unreviewed);
+                renderSection('reviewed', _reviewed);
             } catch (e) {
                 console.error('Failed to load classifications:', e);
             }
+        }
+
+        function setFilter(group, stage, btn) {
+            _filters[group] = stage;
+            document.querySelectorAll(`.filter-pill[data-group="${group}"]`).forEach(p => p.classList.remove('active'));
+            btn.classList.add('active');
+            renderSection(group, group === 'unreviewed' ? _unreviewed : _reviewed);
+        }
+
+        function renderSection(group, allItems) {
+            const filter = _filters[group];
+            const items = filter === 'all' ? allItems : allItems.filter(c => c.stage === filter);
+            const list = document.getElementById(`${group}-list`);
+            const empty = document.getElementById(`${group}-empty`);
+
+            if (!allItems.length) {
+                list.innerHTML = '';
+                empty.classList.remove('hidden');
+                return;
+            }
+            empty.classList.add('hidden');
+
+            if (!items.length) {
+                list.innerHTML = `<p style="color:#888; padding:1rem;">No emails with label "${filter}".</p>`;
+                return;
+            }
+
+            list.innerHTML = items.map(c => `
+                <div class="queue-card" id="cls-card-${c.id}">
+                    <div style="display:flex; justify-content:space-between; align-items:start; gap:1rem; flex-wrap:wrap;">
+                        <div style="flex:1; min-width:200px;">
+                            <div class="subject">${esc(c.subject)}</div>
+                            <div class="snippet">${esc(c.snippet || '')}</div>
+                        </div>
+                        <div style="text-align:right; flex-shrink:0;">
+                            <span class="stage-badge">${esc(c.stage)}</span>
+                        </div>
+                    </div>
+                    <div class="controls" id="cls-controls-${c.id}" style="margin-top:0.5rem;">
+                        <button class="btn-primary" onclick="showRelabel(${c.id})" style="padding:0.2rem 0.8rem; font-size:0.8rem;">Re-label</button>
+                    </div>
+                    <div class="controls hidden" id="cls-relabel-${c.id}" style="margin-top:0.5rem;">
+                        ${labelDropdownHtml('cls', c.id)}
+                        <button class="btn-success" onclick="submitRelabel(${c.id})" style="padding:0.3rem 1rem; font-size:0.85rem;">Save</button>
+                        <button class="btn-danger" onclick="cancelRelabel(${c.id})" style="padding:0.3rem 0.8rem; font-size:0.85rem;">Cancel</button>
+                    </div>
+                </div>
+            `).join('');
         }
 
         function showRelabel(id) {
@@ -526,11 +582,14 @@
             if (!label) return showStatus('Select a type first.', 'error');
 
             try {
-                await apiFetch(`/api/classifications/${id}/relabel`, {
+                const result = await apiFetch(`/api/classifications/${id}/relabel`, {
                     method: 'POST',
                     body: JSON.stringify({ label }),
                 });
-                showStatus('Re-labeled successfully. ChromaDB updated.', 'success');
+                const msg = result.routed
+                    ? 'Re-labeled and re-routed through pipeline.'
+                    : 'Re-labeled (no email body available for pipeline re-routing).';
+                showStatus(msg, 'success');
                 loadClassifications();
                 loadQueueMetrics();
             } catch (e) { showStatus(e.message, 'error'); }

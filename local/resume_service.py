@@ -405,7 +405,7 @@ async def resolve_queue_item(
     if not item:
         raise HTTPException(404, "Queue item not found or already resolved")
 
-    # Store in ChromaDB + labeled_emails (generates embedding, enforces PII boundary)
+    # Store in ChromaDB + labeled_emails (generates embedding)
     await store_labeled_example(
         email_id=item["email_id"],
         subject=item["subject"],
@@ -441,20 +441,30 @@ class RelabelRequest(BaseModel):
     label: str
 
 
+STAGE_LABELS = {"applied", "assessment", "assignment", "interview", "offer", "rejected"}
+
+
 @app.post("/api/classifications/{classification_id}/relabel")
 async def relabel_classification(
     classification_id: int, req: RelabelRequest, _auth=Depends(_require_api_key)
 ):
-    """Re-label an existing classification. Updates DB and ChromaDB."""
+    """Re-label a classification. Updates DB, ChromaDB, and re-routes through pipeline."""
     if req.label not in VALID_QUEUE_LABELS:
         raise HTTPException(
             400,
             f"Invalid label '{req.label}'. Valid: {sorted(VALID_QUEUE_LABELS)}",
         )
 
+    # Join labeling_queue to get body (needed for pipeline re-routing)
     async with acquire() as conn:
         item = await conn.fetchrow(
-            "SELECT id, email_id, subject, snippet FROM labeled_emails WHERE id = $1",
+            """
+            SELECT le.id, le.email_id, le.subject, le.snippet,
+                   lq.body
+            FROM labeled_emails le
+            LEFT JOIN labeling_queue lq ON lq.email_id = le.email_id
+            WHERE le.id = $1
+            """,
             classification_id,
         )
     if not item:
@@ -468,7 +478,7 @@ async def relabel_classification(
             classification_id,
         )
 
-    # Update ChromaDB for RAG few-shot (re-embed with new label)
+    # Update ChromaDB for RAG few-shot
     try:
         from local.agents.shared.embedder import LocalEmbedder
         from local.agents.shared.memory import get_email_collection
@@ -484,11 +494,39 @@ async def relabel_classification(
             metadatas=[{"label": req.label, "confirmed_by": "user"}],
         )
     except Exception:
-        logger.warning(
-            "Failed to update ChromaDB for relabel — DB updated successfully"
-        )
+        logger.warning("Failed to update ChromaDB for relabel")
 
-    return {"status": "relabeled"}
+    # Re-route through pipeline based on new label
+    routed = False
+    body = item["body"] or ""
+    if body and req.label != "irrelevant":
+        try:
+            from local.agents.shared.dispatch import (
+                dispatch_status_update,
+                dispatch_recommendation,
+            )
+
+            if req.label in STAGE_LABELS or req.label == "status_update":
+                await dispatch_status_update(
+                    email_id=item["email_id"],
+                    subject=item["subject"],
+                    snippet=item["snippet"] or "",
+                    body=body,
+                    company=None,
+                    role=None,
+                )
+                routed = True
+            elif req.label == "recommendation":
+                await dispatch_recommendation(
+                    email_id=item["email_id"],
+                    subject=item["subject"],
+                    body=body,
+                )
+                routed = True
+        except Exception:
+            logger.exception("Pipeline re-routing failed for relabel")
+
+    return {"status": "relabeled", "routed": routed}
 
 
 @app.get("/api/queue/metrics")
