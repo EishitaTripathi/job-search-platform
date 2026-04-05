@@ -509,7 +509,7 @@
             try {
                 const all = await apiFetch('/api/classifications');
                 _unreviewed = all.filter(c => c.confirmed_by === 'auto');
-                _reviewed = all.filter(c => c.confirmed_by === 'user');
+                _reviewed = all.filter(c => c.confirmed_by === 'user' || c.confirmed_by === 'verified');
                 document.getElementById('unreviewed-count').textContent = `(${_unreviewed.length})`;
                 document.getElementById('reviewed-count').textContent = `(${_reviewed.length})`;
                 renderSection('unreviewed', _unreviewed);

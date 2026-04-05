@@ -459,7 +459,7 @@ async def relabel_classification(
     async with acquire() as conn:
         item = await conn.fetchrow(
             """
-            SELECT le.id, le.email_id, le.subject, le.snippet,
+            SELECT le.id, le.email_id, le.subject, le.snippet, le.stage AS current_stage,
                    lq.body
             FROM labeled_emails le
             LEFT JOIN labeling_queue lq ON lq.email_id = le.email_id
@@ -470,11 +470,17 @@ async def relabel_classification(
     if not item:
         raise HTTPException(404, "Classification not found")
 
+    # If label unchanged, this is a "Reviewed" confirmation — keep confirmed_by as-is
+    # If label changed, this is a re-label — set confirmed_by to 'user'
+    label_changed = req.label != item["current_stage"]
+    new_confirmed_by = "user" if label_changed else "verified"
+
     # Update DB
     async with acquire() as conn:
         await conn.execute(
-            "UPDATE labeled_emails SET stage = $1, confirmed_by = 'user' WHERE id = $2",
+            "UPDATE labeled_emails SET stage = $1, confirmed_by = $2 WHERE id = $3",
             req.label,
+            new_confirmed_by,
             classification_id,
         )
 
@@ -491,7 +497,7 @@ async def relabel_classification(
             ids=[item["email_id"]],
             documents=[email_text],
             embeddings=[embedding],
-            metadatas=[{"label": req.label, "confirmed_by": "user"}],
+            metadatas=[{"label": req.label, "confirmed_by": new_confirmed_by}],
         )
     except Exception:
         logger.warning("Failed to update ChromaDB for relabel")
@@ -535,7 +541,7 @@ async def queue_metrics(_auth=Depends(_require_api_key)):
     async with acquire() as conn:
         row = await conn.fetchrow(
             """
-            SELECT COUNT(*) FILTER (WHERE confirmed_by = 'auto') AS auto_classified,
+            SELECT COUNT(*) FILTER (WHERE confirmed_by IN ('auto', 'verified')) AS auto_classified,
                    COUNT(*) FILTER (WHERE confirmed_by = 'user') AS user_corrected
             FROM labeled_emails
             """
@@ -564,7 +570,7 @@ async def queue_metrics_history(_auth=Depends(_require_api_key)):
         rows = await conn.fetch(
             """
             SELECT created_at::date AS date,
-                   COUNT(*) FILTER (WHERE confirmed_by = 'auto') AS auto_count,
+                   COUNT(*) FILTER (WHERE confirmed_by IN ('auto', 'verified')) AS auto_count,
                    COUNT(*) FILTER (WHERE confirmed_by = 'user') AS user_count
             FROM labeled_emails
             GROUP BY created_at::date
