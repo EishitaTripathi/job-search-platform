@@ -556,12 +556,13 @@
                         </div>
                     </div>
                     <div class="controls" id="cls-controls-${c.id}" style="margin-top:0.5rem;">
+                        <button class="btn-success" onclick="confirmAsIs(${c.id}, '${esc(c.stage)}')" style="padding:0.2rem 0.8rem; font-size:0.8rem;">Reviewed</button>
                         <button class="btn-primary" onclick="showRelabel(${c.id})" style="padding:0.2rem 0.8rem; font-size:0.8rem;">Re-label</button>
                     </div>
                     <div class="controls hidden" id="cls-relabel-${c.id}" style="margin-top:0.5rem;">
                         ${labelDropdownHtml('cls', c.id)}
                         <button class="btn-success" onclick="submitRelabel(${c.id})" style="padding:0.3rem 1rem; font-size:0.85rem;">Save</button>
-                        <button class="btn-danger" onclick="cancelRelabel(${c.id})" style="padding:0.3rem 0.8rem; font-size:0.85rem;">Cancel</button>
+                        <button class="btn-primary" onclick="cancelRelabel(${c.id})" style="padding:0.3rem 0.8rem; font-size:0.85rem;">Back</button>
                     </div>
                 </div>
             `).join('');
@@ -575,6 +576,18 @@
         function cancelRelabel(id) {
             document.getElementById(`cls-relabel-${id}`).classList.add('hidden');
             document.getElementById(`cls-controls-${id}`).classList.remove('hidden');
+        }
+
+        async function confirmAsIs(id, currentLabel) {
+            try {
+                await apiFetch(`/api/classifications/${id}/relabel`, {
+                    method: 'POST',
+                    body: JSON.stringify({ label: currentLabel }),
+                });
+                showStatus('Marked as reviewed.', 'success');
+                loadClassifications();
+                loadQueueMetrics();
+            } catch (e) { showStatus(e.message, 'error'); }
         }
 
         async function submitRelabel(id) {
