@@ -135,6 +135,17 @@ resource "aws_instance" "nat" {
   source_dest_check           = false # Required for NAT — instance forwards packets it didn't originate
   associate_public_ip_address = true
 
+  # Configure iptables NAT forwarding — required because we use a generic
+  # Amazon Linux 2 AMI (the dedicated amzn-ami-vpc-nat was deprecated).
+  user_data = <<-EOF
+    #!/bin/bash
+    sysctl -w net.ipv4.ip_forward=1
+    echo "net.ipv4.ip_forward = 1" >> /etc/sysctl.d/nat.conf
+    iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
+    iptables -A FORWARD -i eth0 -o eth0 -m state --state RELATED,ESTABLISHED -j ACCEPT
+    iptables -A FORWARD -j ACCEPT
+  EOF
+
   # H2 fix: enforce IMDSv2 — blocks SSRF-based credential theft via metadata endpoint
   metadata_options {
     http_tokens   = "required" # IMDSv2 only (token-based, not vulnerable to SSRF)
@@ -192,7 +203,7 @@ resource "aws_security_group" "ecs" {
 
 resource "aws_security_group" "rds" {
   name        = "${var.project_name}-rds-sg"
-  description = "RDS PostgreSQL - inbound 5432 from ECS only"
+  description = "RDS PostgreSQL - inbound 5432 from ECS and Lambda Persist only"
   vpc_id      = module.vpc.vpc_id
   tags        = merge(local.common_tags, { Name = "${var.project_name}-rds-sg" })
 }

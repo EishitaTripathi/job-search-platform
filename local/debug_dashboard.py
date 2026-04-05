@@ -65,6 +65,14 @@ async def debug_health():
     }
 
 
+@app.get("/api/debug/drift")
+async def debug_drift():
+    """Run infrastructure drift checks against live AWS."""
+    from api.debug.drift_checks import run_drift_checks
+
+    return await run_drift_checks()
+
+
 @app.get("/api/debug/topology")
 async def debug_topology():
     """Return static topology graph data."""

@@ -1159,15 +1159,9 @@ async def run_all_checks_local() -> dict[str, Any]:
     try:
         results: list[HealthResult] = await asyncio.gather(
             # Direct boto3 checks (use local AWS credentials)
+            # Lambda checks removed — JD ingestion now handled by ECS
             _safe(check_s3(), "s3"),
             _safe(check_sqs(), "sqs"),
-            _safe(
-                check_lambda("job-search-platform-fetch", AWS_REGION), "lambda_fetch"
-            ),
-            _safe(
-                check_lambda("job-search-platform-persist", AWS_REGION),
-                "lambda_persist",
-            ),
             _safe(check_eventbridge("job-search-platform", AWS_REGION), "eventbridge"),
             _safe(check_bedrock_kb(), "bedrock_kb"),
             # Cloud API proxy checks (query existing cloud endpoints)

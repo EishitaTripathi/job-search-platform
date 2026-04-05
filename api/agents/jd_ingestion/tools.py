@@ -257,10 +257,20 @@ async def persist_to_rds(
     Uses ON CONFLICT (jd_s3_key) DO NOTHING for dedup.
     Falls back to ats_url lookup if s3_key conflict.
     """
+    # asyncpg requires datetime.date, not a date string
+    date_val = None
+    if date_posted:
+        from datetime import date as _date
+
+        try:
+            date_val = _date.fromisoformat(date_posted)
+        except (ValueError, TypeError):
+            date_val = None
+
     row = await conn.fetchrow(
         """
         INSERT INTO jobs (company, role, source, jd_s3_key, ats_url, raw_json, date_posted, analysis_status)
-        VALUES ($1, $2, $3, $4, $5, $6, $7::date, 'pending')
+        VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending')
         ON CONFLICT (jd_s3_key) DO NOTHING
         RETURNING id
         """,
@@ -270,7 +280,7 @@ async def persist_to_rds(
         s3_key,
         ats_url,
         json.dumps(raw_json) if raw_json else None,
-        date_posted,
+        date_val,
     )
     if row:
         return row["id"]

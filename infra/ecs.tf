@@ -190,10 +190,17 @@ resource "aws_ecs_task_definition" "app" {
 
     # tmpfs mount for FastAPI temp files (uvicorn needs /tmp)
     linuxParameters = {
-      tmpfs = [{
-        containerPath = "/tmp"
-        size          = 64 # MiB
-      }]
+      tmpfs = [
+        {
+          containerPath = "/tmp"
+          size          = 64 # MiB
+        },
+        {
+          containerPath = "/var/lib/amazon/ssm"
+          size          = 16 # MiB — required for ECS Exec (SSM agent)
+        }
+      ]
+      initProcessEnabled = true # Required for ECS Exec signal handling
     }
   }])
 
@@ -211,11 +218,12 @@ resource "aws_ecs_task_definition" "app" {
 # =============================================================================
 
 resource "aws_ecs_service" "app" {
-  name            = var.project_name
-  cluster         = aws_ecs_cluster.main.id
-  task_definition = aws_ecs_task_definition.app.arn
-  desired_count   = 1
-  launch_type     = "FARGATE"
+  name                   = var.project_name
+  cluster                = aws_ecs_cluster.main.id
+  task_definition        = aws_ecs_task_definition.app.arn
+  desired_count          = 1
+  launch_type            = "FARGATE"
+  enable_execute_command = true  # Allows `aws ecs execute-command` for migrations/debugging
 
   network_configuration {
     subnets          = [module.vpc.private_subnets[0]] # private-fetch subnet (has NAT for outbound)

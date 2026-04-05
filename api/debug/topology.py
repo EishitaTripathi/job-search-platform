@@ -215,7 +215,7 @@ _CLOUD_NODES: list[dict[str, Any]] = [
         "health_check": "sqs",
         "description": "Message queue buffering JD fetch requests",
         "why": (
-            "Decouples job discovery from fetching — buffers requests so Lambda "
+            "Decouples job discovery from fetching — buffers requests so ECS "
             "processes them independently."
         ),
     },
@@ -244,7 +244,7 @@ _CLOUD_NODES: list[dict[str, Any]] = [
         "description": "Stores raw JD texts and redacted resumes",
         "why": (
             "Durable object storage — feeds Bedrock Knowledge Base indexing and "
-            "Lambda processing."
+            "JD Ingestion Agent processing."
         ),
     },
     {
@@ -337,7 +337,7 @@ _CLOUD_NODES: list[dict[str, Any]] = [
         "group": "cloud",
         "category": "infrastructure",
         "health_check": None,
-        "description": "Runs FastAPI API + cloud agents (0.25 vCPU, 512MB)",
+        "description": "Runs FastAPI API + cloud agents (0.5 vCPU, 1024MB)",
         "why": (
             "Compute layer — hosts the main API and all cloud agent inference on "
             "managed infrastructure."

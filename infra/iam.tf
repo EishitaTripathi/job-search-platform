@@ -96,6 +96,12 @@ resource "aws_iam_policy" "ecs_task" {
         Resource = ["${data.aws_s3_bucket.jd_storage.arn}/*"]
       },
       {
+        Sid      = "S3ListBucket"
+        Effect   = "Allow"
+        Action   = ["s3:ListBucket"]
+        Resource = [data.aws_s3_bucket.jd_storage.arn]
+      },
+      {
         Sid      = "SecretsManagerRead"
         Effect   = "Allow"
         Action   = ["secretsmanager:GetSecretValue"]
@@ -121,6 +127,17 @@ resource "aws_iam_policy" "ecs_task" {
         Effect   = "Allow"
         Action   = ["bedrock:Retrieve"]
         Resource = ["arn:aws:bedrock:${var.aws_region}:${data.aws_caller_identity.current.account_id}:knowledge-base/${var.bedrock_kb_id}"]
+      },
+      {
+        Sid    = "ECSExec"
+        Effect = "Allow"
+        Action = [
+          "ssmmessages:CreateControlChannel",
+          "ssmmessages:CreateDataChannel",
+          "ssmmessages:OpenControlChannel",
+          "ssmmessages:OpenDataChannel"
+        ]
+        Resource = ["*"]
       }
     ]
   })

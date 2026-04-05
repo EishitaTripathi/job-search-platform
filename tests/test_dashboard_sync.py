@@ -229,6 +229,130 @@ def test_lambda_names_match_terraform():
                     )
 
 
+def test_cloud_infra_nodes_match_terraform():
+    """Every cloud infrastructure/data_store node with a health_check must
+    correspond to a real Terraform resource or data source.
+
+    Catches: adding a Terraform resource without a dashboard node, or leaving
+    a dashboard node after the resource is removed.
+    """
+    from api.debug.topology import NODES
+
+    # Map topology node IDs to the Terraform files that define them
+    # Update this mapping when adding new cloud infrastructure nodes
+    # Map cloud topology node IDs (that have health checks) to their
+    # Terraform source files. Update when adding/removing cloud resources.
+    EXPECTED_CLOUD_INFRA = {
+        "sqs": "infra/data.tf",
+        "s3": "infra/data.tf",
+        "eventbridge": "infra/eventbridge.tf",
+        "rds": "infra/data.tf",  # data source (console-created)
+        "bedrock_kb": "infra/bedrock.tf",
+        "analysis_poller": "infra/ecs.tf",  # background task in ECS
+    }
+
+    cloud_infra_nodes = {
+        n["id"]
+        for n in NODES
+        if n.get("group") == "cloud"
+        and n.get("health_check")  # only nodes with active health checks
+    }
+
+    # Every health-checked infra node must be in the mapping
+    unmapped = cloud_infra_nodes - set(EXPECTED_CLOUD_INFRA)
+    assert not unmapped, (
+        f"Cloud infra nodes with health checks not in EXPECTED_CLOUD_INFRA: {unmapped}. "
+        f"Add them to this test mapping."
+    )
+
+    # Every mapped node must exist in topology
+    missing_nodes = set(EXPECTED_CLOUD_INFRA) - cloud_infra_nodes
+    assert not missing_nodes, (
+        f"EXPECTED_CLOUD_INFRA entries without topology nodes: {missing_nodes}. "
+        f"Add nodes to api/debug/topology.py or remove from this mapping."
+    )
+
+    # Every mapped Terraform file must exist
+    for node_id, tf_file in EXPECTED_CLOUD_INFRA.items():
+        tf_path = ROOT / tf_file
+        assert tf_path.exists(), (
+            f"Topology node '{node_id}' references {tf_file} but file doesn't exist. "
+            f"Was the resource moved or removed?"
+        )
+
+
+def test_health_check_components_have_topology_nodes():
+    """Every component ID returned by health checks must have a topology node.
+
+    Catches: adding a new health check without updating the dashboard.
+    """
+    from api.debug.topology import NODES
+
+    node_ids = {n["id"] for n in NODES}
+
+    # Parse component names from run_all_checks_local() in health_checks.py
+    health_checks_path = ROOT / "api" / "debug" / "health_checks.py"
+    source = health_checks_path.read_text()
+
+    # Extract _safe(..., "component_name") patterns
+    health_components = set()
+    for m in re.finditer(r'_safe\(.+?,\s*["\'](\w+)["\']\)', source):
+        component = m.group(1)
+        # Skip lambda_fetch/lambda_persist — Lambda is removed
+        if "lambda" in component:
+            continue
+        health_components.add(component)
+
+    # cross_boundary is a virtual check (validates the local→cloud edge),
+    # not a standalone infrastructure component needing its own node
+    health_components.discard("cross_boundary")
+
+    missing = health_components - node_ids
+    assert not missing, (
+        f"Health check components without topology nodes: {missing}. "
+        f"Add nodes to api/debug/topology.py. See DASHBOARD.md."
+    )
+
+
+def test_topology_health_check_ids_are_valid():
+    """Every topology node with health_check set must reference a real check
+    function that exists in health_checks.py or local_checks.py.
+
+    Catches: renaming a health check without updating topology.
+    """
+    from api.debug.topology import NODES
+
+    # Collect all check function names from health_checks.py and local_checks.py
+    valid_checks = set()
+
+    health_path = ROOT / "api" / "debug" / "health_checks.py"
+    if health_path.exists():
+        source = health_path.read_text()
+        for m in re.finditer(r'_safe\(.+?,\s*["\'](\w+)["\']\)', source):
+            valid_checks.add(m.group(1))
+
+    local_path = ROOT / "local" / "debug" / "local_checks.py"
+    if local_path.exists():
+        source = local_path.read_text()
+        for m in re.finditer(r'_safe\(.+?,\s*["\'](\w+)["\']\)', source):
+            valid_checks.add(m.group(1))
+
+    # Check each topology node
+    broken = []
+    for node in NODES:
+        hc = node.get("health_check")
+        if hc and hc not in valid_checks:
+            broken.append(
+                f"Node '{node['id']}' references health_check '{hc}' which doesn't exist"
+            )
+
+    assert not broken, (
+        "Topology nodes reference non-existent health checks:\n"
+        + "\n".join(broken)
+        + "\nUpdate api/debug/topology.py or add the health check."
+    )
+
+
 def test_schema_table_count_matches_rds_check():
     """The number of tables in schema.sql should be reflected in the dashboard."""
     tables = _get_schema_tables()
@@ -238,4 +362,76 @@ def test_schema_table_count_matches_rds_check():
         f"schema.sql has {len(tables)} tables, expected {expected_table_count}. "
         f"If you added/removed a table, update this test AND "
         f"api/debug/health_checks.py check_rds() expected tables."
+    )
+
+
+# ---------------------------------------------------------------------------
+# Terraform ↔ topology description sync
+# ---------------------------------------------------------------------------
+
+
+def _get_ecs_cpu_memory_from_terraform() -> tuple[str, str]:
+    """Parse ECS CPU and memory from infra/ecs.tf."""
+    ecs_tf = ROOT / "infra" / "ecs.tf"
+    if not ecs_tf.exists():
+        return ("", "")
+    source = ecs_tf.read_text()
+    cpu_match = re.search(r"cpu\s*=\s*(\d+)", source)
+    mem_match = re.search(r"memory\s*=\s*(\d+)", source)
+    cpu = cpu_match.group(1) if cpu_match else ""
+    memory = mem_match.group(1) if mem_match else ""
+    return (cpu, memory)
+
+
+def test_ecs_topology_matches_terraform_cpu_memory():
+    """ECS node description must reflect the actual CPU/memory from ecs.tf."""
+    from api.debug.topology import NODES
+
+    cpu, memory = _get_ecs_cpu_memory_from_terraform()
+    if not cpu or not memory:
+        pytest.skip("Could not parse CPU/memory from ecs.tf")
+
+    vcpu = int(cpu) / 1024
+    memory_mb = int(memory)
+
+    ecs_node = next((n for n in NODES if n["id"] == "ecs"), None)
+    assert ecs_node is not None, "No 'ecs' node in topology"
+
+    desc = ecs_node["description"]
+    assert f"{vcpu}" in desc and f"{memory_mb}" in desc, (
+        f"ECS topology description '{desc}' does not match Terraform "
+        f"values: {vcpu} vCPU, {memory_mb}MB. Update api/debug/topology.py."
+    )
+
+
+def test_topology_descriptions_no_stale_lambda_references():
+    """No topology description should reference Lambda if Lambda is removed."""
+    lambda_tf = ROOT / "infra" / "lambda.tf"
+    if not lambda_tf.exists():
+        pytest.skip("lambda.tf not found")
+
+    source = lambda_tf.read_text()
+    lambda_removed = "REMOVED" in source.split("\n")[0]
+
+    if not lambda_removed:
+        pytest.skip("Lambda functions still active")
+
+    from api.debug.topology import NODES
+
+    stale = []
+    for node in NODES:
+        desc = node.get("description", "")
+        why = node.get("why", "")
+        text = f"{desc} {why}".lower()
+        # Allow references that explicitly say "replaces Lambda" (historical context)
+        if "lambda" in text and "replaces lambda" not in text:
+            stale.append(
+                f"Node '{node['id']}' references Lambda in "
+                f"description/why but Lambda is removed"
+            )
+
+    assert not stale, (
+        "Stale Lambda references in topology:\n"
+        + "\n".join(stale)
+        + "\nUpdate api/debug/topology.py."
     )
