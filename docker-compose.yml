@@ -121,7 +121,7 @@ services:
     volumes:
       - ./local:/app/local
       - ./scripts:/app/scripts:ro
-      - ./credentials:/app/credentials:ro
+      - ./credentials:/app/credentials
       - ${HOME}/.aws:/aws-creds:ro
     depends_on:
       postgres:
@@ -165,7 +165,7 @@ services:
       - ./api:/app/api:ro
       - ./infra/schema.sql:/app/infra/schema.sql:ro
       - ${HOME}/.aws:/aws-creds:ro
-      - ./credentials:/app/credentials:ro
+      - ./credentials:/app/credentials
     depends_on:
       postgres:
         condition: service_healthy

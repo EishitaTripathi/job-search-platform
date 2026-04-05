@@ -33,6 +33,8 @@ def _ensure_list(val) -> list:
 
 async def strip_boilerplate(text: str) -> str:
     """Use Haiku to strip benefits, legal, salary, and equal opportunity boilerplate."""
+    if not text or not text.strip():
+        return ""
     system = (
         "You are a job description cleaner. Remove all boilerplate sections from the "
         "job description: benefits, salary/compensation, equal opportunity statements, "
@@ -52,6 +54,8 @@ async def extract_fields(text: str) -> dict:
     Returns dict with: required_skills, preferred_skills, tech_stack, role_type,
     experience_min, experience_max, deal_breakers, confidence_scores.
     """
+    if not text or not text.strip():
+        return {}
     system = (
         "You are a job description analyzer. Extract structured information from the "
         "job description and return ONLY valid JSON with these fields:\n"
@@ -138,6 +142,6 @@ async def store_jd_analysis(
             fields.get("experience_max") or 100,
         ),
         _ensure_list(fields.get("deal_breakers")),
-        fields.get("confidence_scores", {}),
+        json.dumps(fields.get("confidence_scores", {})),
     )
     return row["id"]

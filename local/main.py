@@ -65,69 +65,83 @@ async def email_check():
 
         classifier = build_email_classifier()
         processed = 0
+        skipped = 0
 
-        for email in emails:
-            state = {
-                "email_id": email["email_id"],
-                "subject": email["subject"],
-                "snippet": email["snippet"],
-                "body": email["body"],
-                "label": "",
-                "company": None,
-                "role": None,
-                "urls": [],
-                "confidence": 0.0,
-                "action": "",
-            }
+        for i, email in enumerate(emails):
+            try:
+                state = {
+                    "email_id": email["email_id"],
+                    "subject": email["subject"],
+                    "snippet": email["snippet"],
+                    "body": email["body"],
+                    "label": "",
+                    "company": None,
+                    "role": None,
+                    "urls": [],
+                    "confidence": 0.0,
+                    "action": "",
+                }
 
-            result = await classifier.ainvoke(state)
-            logger.info(
-                f"Email {email['email_id']}: label={result['label']} "
-                f"confidence={result['confidence']:.2f} action={result['action']}"
-            )
-
-            # Route to appropriate agent based on classification
-            if result["action"] == "to_followup":
-                stage_result = await dispatch_status_update(
-                    email_id=email["email_id"],
-                    subject=email["subject"],
-                    snippet=email["snippet"],
-                    body=email["body"],
-                    company=result.get("company"),
-                    role=result.get("role"),
-                )
+                result = await classifier.ainvoke(state)
                 logger.info(
-                    f"Stage Classifier: email={email['email_id']} "
-                    f"stage={stage_result.get('stage')} "
-                    f"confidence={stage_result.get('confidence', 0):.2f} "
-                    f"job_id={stage_result.get('job_id')}"
+                    f"[{i+1}/{len(emails)}] Email {email['email_id']}: "
+                    f"label={result['label']} confidence={result['confidence']:.2f} "
+                    f"action={result['action']}"
                 )
-                if stage_result.get("deadlines_found"):
+
+                # Route to appropriate agent based on classification
+                if result["action"] == "to_followup":
+                    stage_result = await dispatch_status_update(
+                        email_id=email["email_id"],
+                        subject=email["subject"],
+                        snippet=email["snippet"],
+                        body=email["body"],
+                        company=result.get("company"),
+                        role=result.get("role"),
+                    )
                     logger.info(
-                        f"Deadline Tracker: found {len(stage_result['deadlines_found'])} "
-                        f"deadlines for email={email['email_id']}"
+                        f"  Stage Classifier: stage={stage_result.get('stage')} "
+                        f"confidence={stage_result.get('confidence', 0):.2f} "
+                        f"job_id={stage_result.get('job_id')}"
+                    )
+                    if stage_result.get("deadlines_found"):
+                        logger.info(
+                            f"  Deadline Tracker: found "
+                            f"{len(stage_result['deadlines_found'])} deadlines"
+                        )
+
+                elif result["action"] == "to_fetch":
+                    rec_result = await dispatch_recommendation(
+                        email_id=email["email_id"],
+                        subject=email["subject"],
+                        body=email["body"],
+                    )
+                    logger.info(
+                        f"  Recommendation Parser: "
+                        f"{len(rec_result.get('companies', []))} pairs, "
+                        f"sent {rec_result.get('sent_count', 0)} to cloud"
                     )
 
-            elif result["action"] == "to_fetch":
-                rec_result = await dispatch_recommendation(
-                    email_id=email["email_id"],
-                    subject=email["subject"],
-                    body=email["body"],
-                )
-                logger.info(
-                    f"Recommendation Parser: email={email['email_id']} "
-                    f"extracted {len(rec_result.get('companies', []))} pairs, "
-                    f"sent {rec_result.get('sent_count', 0)} to cloud"
-                )
+                processed += 1
 
-            processed += 1
+            except Exception as e:
+                logger.warning(
+                    f"[{i+1}/{len(emails)}] Skipping email {email['email_id']}: {e}"
+                )
+                skipped += 1
+                continue
 
+        logger.info(
+            f"Email check done: {processed} processed, {skipped} skipped, "
+            f"{len(emails)} total"
+        )
         await update_orchestration_run(
             run_id,
             "completed",
             agent_results={
                 "emails_fetched": len(emails),
                 "emails_processed": processed,
+                "emails_skipped": skipped,
             },
         )
 
@@ -187,7 +201,8 @@ async def main():
             "interval",
             minutes=15,
             id="email_check",
-            next_run_time=__import__("datetime").datetime.now(),
+            next_run_time=__import__("datetime").datetime.now()
+            + __import__("datetime").timedelta(seconds=15),
         )
         scheduler.add_job(daily_followup, "cron", hour=9, minute=5, id="daily_followup")
         logger.info(

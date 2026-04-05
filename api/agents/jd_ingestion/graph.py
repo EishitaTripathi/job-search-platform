@@ -167,6 +167,17 @@ async def node_store_and_persist(state: JDIngestionState) -> dict:
         logger.info("JD Ingestion: job already exists (dedup), skipping analysis")
         return {"s3_key": s3_key or "", "job_id": 0, "jd_analysis_id": 0}
 
+    # Skip analysis for empty JDs
+    if not jd_text or not jd_text.strip():
+        logger.warning(
+            "JD Ingestion: empty JD text for job_id=%d, skipping analysis", job_id
+        )
+        await conn.execute(
+            "UPDATE jobs SET analysis_status = 'skipped', analysis_error = 'Empty JD text' WHERE id = $1",
+            job_id,
+        )
+        return {"s3_key": s3_key or "", "job_id": job_id, "jd_analysis_id": 0}
+
     # Run JD Analyzer
     from api.agents.jd_analyzer.graph import run_jd_analyzer
 

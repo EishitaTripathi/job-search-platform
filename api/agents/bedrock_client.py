@@ -80,6 +80,8 @@ def invoke_model(
     temperature: float = 0.1,
 ) -> str:
     """Invoke a Bedrock model with Messages API."""
+    if not user_message or not user_message.strip():
+        raise ValueError("Cannot invoke model with empty user message")
     client = _ensure_client()
 
     body = json.dumps(
