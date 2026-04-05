@@ -333,6 +333,20 @@ async def _poll_sqs_messages():
                                 len(jobs),
                             )
 
+                            # Extend visibility for large batches (default 300s too short)
+                            if len(jobs) > 50:
+                                try:
+                                    await asyncio.to_thread(
+                                        sqs.change_message_visibility,
+                                        QueueUrl=queue_url,
+                                        ReceiptHandle=msg["ReceiptHandle"],
+                                        VisibilityTimeout=3600,  # 1 hour
+                                    )
+                                except Exception:
+                                    logger.warning(
+                                        "SQS consumer: failed to extend visibility timeout"
+                                    )
+
                             for job_data in jobs:
                                 async with _pool.acquire() as conn:
                                     # Build a per-job message with the JD text pre-extracted
