@@ -57,20 +57,28 @@ def get_gmail_service():
     return build("gmail", "v1", credentials=creds)
 
 
-def fetch_recent_emails(service, max_results: int = 100) -> list[dict]:
+def fetch_recent_emails(service, max_results: int = 500) -> list[dict]:
     """Fetch emails from the last 4 months, returning id/subject/snippet/body."""
-    results = (
-        service.users()
-        .messages()
-        .list(
-            userId="me",
-            q="newer_than:120d",
-            maxResults=max_results,
-        )
-        .execute()
-    )
+    messages = []
+    page_token = None
 
-    messages = results.get("messages", [])
+    while len(messages) < max_results:
+        request = (
+            service.users()
+            .messages()
+            .list(
+                userId="me",
+                q="newer_than:120d",
+                maxResults=min(100, max_results - len(messages)),
+                **({"pageToken": page_token} if page_token else {}),
+            )
+        )
+        results = request.execute()
+        messages.extend(results.get("messages", []))
+        page_token = results.get("nextPageToken")
+        if not page_token:
+            break
+
     emails = []
 
     for msg_meta in messages:
