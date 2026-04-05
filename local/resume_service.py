@@ -547,26 +547,35 @@ async def relabel_classification(
                 except Exception:
                     logger.warning("Failed to extract company/role for relabel")
 
-                # Create job in cloud via recommendation
+                # Find existing job locally, or create in cloud
                 job_id = None
                 if company and role:
-                    rec_resp = await send_to_cloud_with_response(
-                        "recommendation",
-                        RecommendationPayload(company=company, role=role),
-                    )
-                    if rec_resp and rec_resp.get("job_id"):
-                        job_id = rec_resp["job_id"]
-                        # Create locally too
-                        async with acquire() as conn:
-                            await conn.execute(
-                                """INSERT INTO jobs (id, company, role, source, status)
-                                   VALUES ($1, $2, $3, 'email_recommendation', $4)
-                                   ON CONFLICT DO NOTHING""",
-                                job_id,
-                                company,
-                                role,
-                                req.label,
-                            )
+                    # Check local DB first
+                    async with acquire() as conn:
+                        existing = await conn.fetchrow(
+                            "SELECT id FROM jobs WHERE company ILIKE $1 LIMIT 1",
+                            f"%{company}%",
+                        )
+                    if existing:
+                        job_id = existing["id"]
+                    else:
+                        # Create via cloud recommendation
+                        rec_resp = await send_to_cloud_with_response(
+                            "recommendation",
+                            RecommendationPayload(company=company, role=role),
+                        )
+                        if rec_resp and rec_resp.get("job_id"):
+                            job_id = rec_resp["job_id"]
+                            async with acquire() as conn:
+                                await conn.execute(
+                                    """INSERT INTO jobs (id, company, role, source, status)
+                                       VALUES ($1, $2, $3, 'email_recommendation', $4)
+                                       ON CONFLICT DO NOTHING""",
+                                    job_id,
+                                    company,
+                                    role,
+                                    req.label,
+                                )
 
                 # Send status with user's chosen label directly
                 if job_id:
