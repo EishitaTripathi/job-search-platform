@@ -504,33 +504,124 @@ async def relabel_classification(
     except Exception:
         logger.warning("Failed to update ChromaDB for relabel")
 
-    # Re-route through pipeline based on new label
+    # Send user's label directly to cloud (don't re-run classifier)
     routed = False
-    body = item["body"] or ""
-    if body and req.label != "irrelevant":
+    if req.label != "irrelevant":
         try:
-            from local.agents.shared.dispatch import (
-                dispatch_status_update,
-                dispatch_recommendation,
-            )
+            from local.pipeline.sender import send_to_cloud, send_to_cloud_with_response
+            from local.pipeline.schemas import StatusPayload, RecommendationPayload
 
             if req.label in STAGE_LABELS or req.label == "status_update":
-                await dispatch_status_update(
-                    email_id=item["email_id"],
-                    subject=item["subject"],
-                    snippet=item["snippet"] or "",
-                    body=body,
-                    company=None,
-                    role=None,
-                )
-                routed = True
+                # Extract company/role for job creation
+                company = None
+                role = None
+                try:
+                    from local.agents.shared.llm import (
+                        llm_generate,
+                        sanitize_for_prompt,
+                    )
+                    import re as _re
+
+                    extract_prompt = (
+                        "Extract the company name and job role from this email. "
+                        'Respond with ONLY JSON: {"company": "name", "role": "title"}\n\n'
+                        f"Subject: {sanitize_for_prompt(item['subject'])}\n"
+                        f"Snippet: {sanitize_for_prompt(item['snippet'] or '')}"
+                    )
+                    resp_text = await llm_generate(
+                        extract_prompt, temperature=0.0, max_tokens=100
+                    )
+                    match = _re.search(r"\{[^}]+\}", resp_text)
+                    if match:
+                        extracted = json.loads(match.group())
+                        company = extracted.get("company")
+                        role = extracted.get("role")
+                except Exception:
+                    logger.warning("Failed to extract company/role for relabel")
+
+                # Create job in cloud via recommendation
+                job_id = None
+                if company and role:
+                    rec_resp = await send_to_cloud_with_response(
+                        "recommendation",
+                        RecommendationPayload(company=company, role=role),
+                    )
+                    if rec_resp and rec_resp.get("job_id"):
+                        job_id = rec_resp["job_id"]
+                        # Create locally too
+                        async with acquire() as conn:
+                            await conn.execute(
+                                """INSERT INTO jobs (id, company, role, source, status)
+                                   VALUES ($1, $2, $3, 'email_recommendation', $4)
+                                   ON CONFLICT DO NOTHING""",
+                                job_id,
+                                company,
+                                role,
+                                req.label,
+                            )
+
+                # Send status with user's chosen label directly
+                if job_id:
+                    # Extract deadline if stage warrants it
+                    deadline = None
+                    body = item["body"] or ""
+                    if req.label in ("assessment", "assignment", "interview") and body:
+                        try:
+                            deadline_prompt = (
+                                "Extract any deadline date from this email. "
+                                "Respond with ONLY a JSON object: "
+                                '{"deadline": "YYYY-MM-DD"} or {"deadline": null}\n\n'
+                                f"Email: {sanitize_for_prompt(body[:2000])}"
+                            )
+                            dl_resp = await llm_generate(
+                                deadline_prompt, temperature=0.0, max_tokens=50
+                            )
+                            dl_match = _re.search(r"\{[^}]+\}", dl_resp)
+                            if dl_match:
+                                dl_data = json.loads(dl_match.group())
+                                if dl_data.get("deadline"):
+                                    deadline = dl_data["deadline"]
+                        except Exception:
+                            logger.warning("Failed to extract deadline")
+
+                    payload = StatusPayload(
+                        job_id=job_id, stage=req.label, deadline=deadline
+                    )
+                    await send_to_cloud("status", payload)
+                    routed = True
+
             elif req.label == "recommendation":
-                await dispatch_recommendation(
-                    email_id=item["email_id"],
-                    subject=item["subject"],
-                    body=body,
-                )
-                routed = True
+                # Extract and send recommendation
+                try:
+                    from local.agents.shared.llm import (
+                        llm_generate,
+                        sanitize_for_prompt,
+                    )
+                    import re as _re
+
+                    extract_prompt = (
+                        "Extract the company name and job role from this email. "
+                        'Respond with ONLY JSON: {"company": "name", "role": "title"}\n\n'
+                        f"Subject: {sanitize_for_prompt(item['subject'])}\n"
+                        f"Snippet: {sanitize_for_prompt(item['snippet'] or '')}"
+                    )
+                    resp_text = await llm_generate(
+                        extract_prompt, temperature=0.0, max_tokens=100
+                    )
+                    match = _re.search(r"\{[^}]+\}", resp_text)
+                    if match:
+                        extracted = json.loads(match.group())
+                        company = extracted.get("company")
+                        role = extracted.get("role")
+                        if company and role:
+                            await send_to_cloud_with_response(
+                                "recommendation",
+                                RecommendationPayload(company=company, role=role),
+                            )
+                            routed = True
+                except Exception:
+                    logger.warning("Failed to extract/send recommendation for relabel")
+
         except Exception:
             logger.exception("Pipeline re-routing failed for relabel")
 

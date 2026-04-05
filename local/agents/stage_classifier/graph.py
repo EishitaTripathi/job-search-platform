@@ -71,18 +71,43 @@ async def route_by_confidence_node(state: StageClassifierState) -> dict:
             stage=state["stage"],
         )
 
+    company = state.get("company")
+    role = state.get("role")
+
+    # Fallback: extract company/role from email if classifier missed them
+    if not company or not role:
+        try:
+            from local.agents.shared.llm import llm_generate, sanitize_for_prompt
+
+            extract_prompt = (
+                "Extract the company name and job role from this email. "
+                "Respond with ONLY a JSON object: "
+                '{"company": "company name", "role": "job title"}\n\n'
+                f"Subject: {sanitize_for_prompt(state['subject'])}\n"
+                f"Snippet: {sanitize_for_prompt(state['snippet'][:500])}"
+            )
+            import json
+            import re
+
+            resp = await llm_generate(extract_prompt, temperature=0.0, max_tokens=100)
+            match = re.search(r"\{[^}]+\}", resp)
+            if match:
+                extracted = json.loads(match.group())
+                company = company or extracted.get("company")
+                role = role or extracted.get("role")
+        except Exception:
+            pass
+
     # Fuzzy match company+role to find job_id locally
-    job_id = await lookup_job_id(state.get("company"), state.get("role"))
+    job_id = await lookup_job_id(company, role)
 
     # If no local job but we have company+role, create via cloud recommendation
-    if not job_id and state.get("company") and state.get("role"):
+    if not job_id and company and role:
         try:
             from local.pipeline.sender import send_to_cloud_with_response
             from local.pipeline.schemas import RecommendationPayload
 
-            payload = RecommendationPayload(
-                company=state["company"], role=state["role"]
-            )
+            payload = RecommendationPayload(company=company, role=role)
             resp = await send_to_cloud_with_response("recommendation", payload)
             if resp and resp.get("job_id"):
                 job_id = resp["job_id"]
@@ -97,16 +122,16 @@ async def route_by_confidence_node(state: StageClassifierState) -> dict:
                         ON CONFLICT DO NOTHING
                         """,
                         job_id,
-                        state["company"],
-                        state["role"],
+                        company,
+                        role,
                     )
         except Exception:
             import logging
 
             logging.getLogger(__name__).warning(
                 "Failed to create cloud job for %s — %s",
-                state.get("company"),
-                state.get("role"),
+                company,
+                role,
             )
 
     return {"job_id": job_id}

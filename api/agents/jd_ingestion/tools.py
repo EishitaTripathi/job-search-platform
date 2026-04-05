@@ -4,6 +4,7 @@ Consolidates logic from Lambda Fetch + Lambda Persist + Sponsorship Screener
 into a single ECS-based pipeline that screens BEFORE storing to S3.
 """
 
+import asyncpg
 import dataclasses
 import hashlib
 import ipaddress
@@ -267,21 +268,32 @@ async def persist_to_rds(
         except (ValueError, TypeError):
             date_val = None
 
-    row = await conn.fetchrow(
-        """
-        INSERT INTO jobs (company, role, source, jd_s3_key, ats_url, raw_json, date_posted, analysis_status)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending')
-        ON CONFLICT (jd_s3_key) DO NOTHING
-        RETURNING id
-        """,
-        company,
-        role,
-        source,
-        s3_key,
-        ats_url,
-        json.dumps(raw_json) if raw_json else None,
-        date_val,
-    )
+    try:
+        row = await conn.fetchrow(
+            """
+            INSERT INTO jobs (company, role, source, jd_s3_key, ats_url, raw_json, date_posted, analysis_status)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending')
+            ON CONFLICT (jd_s3_key) DO NOTHING
+            RETURNING id
+            """,
+            company,
+            role,
+            source,
+            s3_key,
+            ats_url,
+            json.dumps(raw_json) if raw_json else None,
+            date_val,
+        )
+    except asyncpg.exceptions.UniqueViolationError:
+        # Hit company/role/source unique constraint — job already exists
+        existing = await conn.fetchrow(
+            "SELECT id FROM jobs WHERE company = $1 AND role = $2 AND source = $3",
+            company,
+            role,
+            source,
+        )
+        return existing["id"] if existing else None
+
     if row:
         return row["id"]
 

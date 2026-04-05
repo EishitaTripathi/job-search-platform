@@ -10,7 +10,9 @@ Conditional edges:
 """
 
 import asyncio
+import json
 import logging
+import os
 from typing import TypedDict
 
 from langgraph.graph import END, StateGraph
@@ -167,15 +169,47 @@ async def node_store_and_persist(state: JDIngestionState) -> dict:
         logger.info("JD Ingestion: job already exists (dedup), skipping analysis")
         return {"s3_key": s3_key or "", "job_id": 0, "jd_analysis_id": 0}
 
-    # Skip analysis for empty JDs
+    # Empty JD text — enqueue ATS search if company/role available
     if not jd_text or not jd_text.strip():
-        logger.warning(
-            "JD Ingestion: empty JD text for job_id=%d, skipping analysis", job_id
-        )
-        await conn.execute(
-            "UPDATE jobs SET analysis_status = 'skipped', analysis_error = 'Empty JD text' WHERE id = $1",
-            job_id,
-        )
+        company = job_data.get("company", "")
+        role = job_data.get("role", "")
+        if company and company != "Unknown" and role and role != "Unknown":
+            # Re-enqueue as search mode so node_search_ats can find the JD
+            import boto3
+
+            try:
+                sqs = boto3.client(
+                    "sqs", region_name=os.environ.get("AWS_DEFAULT_REGION", "us-east-2")
+                )
+                queue_url = sqs.get_queue_url(
+                    QueueName=os.environ.get(
+                        "SQS_QUEUE_NAME", "job-search-platform-jd-scrape-queue"
+                    )
+                )["QueueUrl"]
+                sqs.send_message(
+                    QueueUrl=queue_url,
+                    MessageBody=json.dumps(
+                        {"job_id": str(job_id), "company": company, "role": role}
+                    ),
+                )
+                logger.info(
+                    "JD Ingestion: empty JD, enqueued ATS search for job_id=%d (%s — %s)",
+                    job_id,
+                    company,
+                    role,
+                )
+            except Exception:
+                logger.exception(
+                    "JD Ingestion: failed to enqueue ATS search for job_id=%d", job_id
+                )
+        else:
+            logger.warning(
+                "JD Ingestion: empty JD text for job_id=%d, skipping analysis", job_id
+            )
+            await conn.execute(
+                "UPDATE jobs SET analysis_status = 'skipped', analysis_error = 'Empty JD text' WHERE id = $1",
+                job_id,
+            )
         return {"s3_key": s3_key or "", "job_id": job_id, "jd_analysis_id": 0}
 
     # Run JD Analyzer

@@ -67,7 +67,21 @@ async def email_check():
         processed = 0
         skipped = 0
 
-        for i, email in enumerate(emails):
+        # Skip already-classified emails
+        from local.agents.shared.db import acquire
+
+        async with acquire() as conn:
+            existing_ids = {
+                r["email_id"]
+                for r in await conn.fetch("SELECT email_id FROM labeled_emails")
+            }
+        new_emails = [e for e in emails if e["email_id"] not in existing_ids]
+        logger.info(
+            f"New emails to classify: {len(new_emails)} "
+            f"(skipping {len(emails) - len(new_emails)} already classified)"
+        )
+
+        for i, email in enumerate(new_emails):
             try:
                 state = {
                     "email_id": email["email_id"],
@@ -84,7 +98,7 @@ async def email_check():
 
                 result = await classifier.ainvoke(state)
                 logger.info(
-                    f"[{i+1}/{len(emails)}] Email {email['email_id']}: "
+                    f"[{i+1}/{len(new_emails)}] Email {email['email_id']}: "
                     f"label={result['label']} confidence={result['confidence']:.2f} "
                     f"action={result['action']}"
                 )
@@ -126,7 +140,7 @@ async def email_check():
 
             except Exception as e:
                 logger.warning(
-                    f"[{i+1}/{len(emails)}] Skipping email {email['email_id']}: {e}"
+                    f"[{i+1}/{len(new_emails)}] Skipping email {email['email_id']}: {e}"
                 )
                 skipped += 1
                 continue
@@ -201,6 +215,7 @@ async def main():
             "interval",
             minutes=15,
             id="email_check",
+            max_instances=1,
             next_run_time=__import__("datetime").datetime.now()
             + __import__("datetime").timedelta(seconds=15),
         )
