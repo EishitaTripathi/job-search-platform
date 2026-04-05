@@ -590,6 +590,36 @@ async def relabel_classification(
                     await send_to_cloud("status", payload)
                     routed = True
 
+                    # Check if email requires immediate user action
+                    if req.label in ("assessment", "assignment", "interview") and body:
+                        try:
+                            from local.pipeline.schemas import FollowupPayload
+
+                            action_prompt = (
+                                "Does this email require the recipient to take action "
+                                "(reply to schedule, click a link, complete an assessment)?\n"
+                                'Respond with ONLY JSON: {"needs_action": true} or {"needs_action": false}\n\n'
+                                f"Subject: {sanitize_for_prompt(item['subject'])}\n"
+                                f"Email: {sanitize_for_prompt(body[:2000])}"
+                            )
+                            action_resp = await llm_generate(
+                                action_prompt, temperature=0.0, max_tokens=50
+                            )
+                            action_match = _re.search(r"\{[^}]+\}", action_resp)
+                            if action_match:
+                                action_data = json.loads(action_match.group())
+                                if action_data.get("needs_action"):
+                                    followup = FollowupPayload(
+                                        job_id=job_id,
+                                        urgency="high",
+                                        action="send_followup",
+                                    )
+                                    await send_to_cloud("followup", followup)
+                        except Exception:
+                            logger.warning(
+                                "Failed to check action-required for relabel"
+                            )
+
             elif req.label == "recommendation":
                 # Extract and send recommendation
                 try:

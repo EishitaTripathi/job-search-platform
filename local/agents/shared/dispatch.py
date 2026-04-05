@@ -50,19 +50,60 @@ async def dispatch_status_update(
         "job_id": stage_result.get("job_id"),
     }
 
+    job_id = stage_result.get("job_id")
+    stage = stage_result.get("stage", "")
+
     # If stage warrants deadline extraction, run Deadline Tracker
-    if stage_result.get("stage") in DEADLINE_STAGES and stage_result.get("job_id"):
+    if stage in DEADLINE_STAGES and job_id:
         tracker = build_deadline_tracker()
         deadline_result = await tracker.ainvoke(
             {
                 "email_id": email_id,
                 "body": body,
-                "job_id": stage_result["job_id"],
+                "job_id": job_id,
                 "deadlines_found": [],
-                "_stage": stage_result["stage"],
+                "_stage": stage,
             }
         )
         result["deadlines_found"] = deadline_result.get("deadlines_found", [])
+
+    # Check if email requires immediate user action
+    if stage in DEADLINE_STAGES and job_id:
+        try:
+            from local.agents.shared.llm import llm_generate, sanitize_for_prompt
+            from local.pipeline.sender import send_to_cloud
+            from local.pipeline.schemas import FollowupPayload
+            import json
+            import re
+
+            action_prompt = (
+                "Does this email require the recipient to take action "
+                "(reply to schedule, click a link, complete an assessment, "
+                "submit something by a date)?\n"
+                'Respond with ONLY JSON: {"needs_action": true, "reason": "brief description"} '
+                'or {"needs_action": false}\n\n'
+                f"Subject: {sanitize_for_prompt(subject)}\n"
+                f"Email: {sanitize_for_prompt(body[:2000])}"
+            )
+            action_resp = await llm_generate(
+                action_prompt, temperature=0.0, max_tokens=100
+            )
+            match = re.search(r"\{[^}]+\}", action_resp)
+            if match:
+                action_data = json.loads(match.group())
+                if action_data.get("needs_action"):
+                    reason = action_data.get("reason", "Action required")
+                    payload = FollowupPayload(
+                        job_id=job_id,
+                        urgency="high",
+                        action="send_followup",
+                    )
+                    await send_to_cloud("followup", payload)
+                    result["followup_sent"] = True
+                    result["followup_reason"] = reason
+                    logger.info("Action required for email %s: %s", email_id, reason)
+        except Exception:
+            logger.warning("Failed to check action-required for email %s", email_id)
 
     return result
 
