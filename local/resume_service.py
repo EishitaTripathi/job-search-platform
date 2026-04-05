@@ -503,9 +503,18 @@ async def relabel_classification(
     except Exception:
         logger.warning("Failed to update ChromaDB for relabel")
 
-    # Send user's label directly to cloud (don't re-run classifier)
+    # Pause email_check so Ollama is free for this request
+    from local.main import get_llm_gate
+
+    gate = get_llm_gate()
+    gate.clear()  # pause email_check loop
+    logger.info("Paused email_check for relabel")
+
     routed = False
-    if req.label != "irrelevant":
+    try:
+        if req.label == "irrelevant":
+            return {"status": "relabeled", "routed": False}
+
         try:
             from local.pipeline.sender import send_to_cloud, send_to_cloud_with_response
             from local.pipeline.schemas import StatusPayload, RecommendationPayload
@@ -653,6 +662,9 @@ async def relabel_classification(
 
         except Exception:
             logger.exception("Pipeline re-routing failed for relabel")
+    finally:
+        gate.set()  # resume email_check loop
+        logger.info("Resumed email_check after relabel")
 
     return {"status": "relabeled", "routed": routed}
 

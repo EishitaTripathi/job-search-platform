@@ -24,6 +24,19 @@ from local.agents.shared.db import get_pool, close_pool
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
 logger = logging.getLogger("main")
 
+# Shared pause gate — user actions (relabel) can pause the email_check loop
+# so Ollama is free for interactive requests
+_llm_gate: asyncio.Event | None = None
+
+
+def get_llm_gate() -> asyncio.Event:
+    """Return the shared LLM gate event (created lazily on the running loop)."""
+    global _llm_gate
+    if _llm_gate is None:
+        _llm_gate = asyncio.Event()
+        _llm_gate.set()  # start unpaused
+    return _llm_gate
+
 
 def _gmail_configured() -> bool:
     """Check if Gmail credentials exist on disk."""
@@ -81,7 +94,12 @@ async def email_check():
             f"(skipping {len(emails) - len(new_emails)} already classified)"
         )
 
+        gate = get_llm_gate()
+
         for i, email in enumerate(new_emails):
+            # Wait if a user action (relabel) has paused us
+            await gate.wait()
+
             try:
                 state = {
                     "email_id": email["email_id"],
