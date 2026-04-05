@@ -71,8 +71,44 @@ async def route_by_confidence_node(state: StageClassifierState) -> dict:
             stage=state["stage"],
         )
 
-    # Fuzzy match company+role to find job_id
+    # Fuzzy match company+role to find job_id locally
     job_id = await lookup_job_id(state.get("company"), state.get("role"))
+
+    # If no local job but we have company+role, create via cloud recommendation
+    if not job_id and state.get("company") and state.get("role"):
+        try:
+            from local.pipeline.sender import send_to_cloud_with_response
+            from local.pipeline.schemas import RecommendationPayload
+
+            payload = RecommendationPayload(
+                company=state["company"], role=state["role"]
+            )
+            resp = await send_to_cloud_with_response("recommendation", payload)
+            if resp and resp.get("job_id"):
+                job_id = resp["job_id"]
+                # Create locally for future lookups
+                from local.agents.shared.db import acquire
+
+                async with acquire() as conn:
+                    await conn.execute(
+                        """
+                        INSERT INTO jobs (id, company, role, source, status)
+                        VALUES ($1, $2, $3, 'email_recommendation', 'to_apply')
+                        ON CONFLICT DO NOTHING
+                        """,
+                        job_id,
+                        state["company"],
+                        state["role"],
+                    )
+        except Exception:
+            import logging
+
+            logging.getLogger(__name__).warning(
+                "Failed to create cloud job for %s — %s",
+                state.get("company"),
+                state.get("role"),
+            )
+
     return {"job_id": job_id}
 
 

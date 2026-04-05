@@ -74,6 +74,46 @@ async def send_to_cloud(endpoint: str, payload) -> bool:
     return False
 
 
+async def send_to_cloud_with_response(endpoint: str, payload) -> dict | None:
+    """Send a validated payload and return the JSON response, or None on failure."""
+    if not CLOUD_API_URL or not INGEST_HMAC_KEY:
+        logger.warning("CLOUD_API_URL or INGEST_HMAC_KEY not configured, skipping send")
+        return None
+
+    url = f"{CLOUD_API_URL}/api/ingest/{endpoint}"
+    payload_bytes = payload.model_dump_json().encode()
+    timestamp = str(int(time.time()))
+    signature = _sign_payload(payload_bytes, timestamp)
+
+    headers = {
+        "Content-Type": "application/json",
+        "X-Signature": signature,
+        "X-Timestamp": timestamp,
+    }
+
+    for attempt in range(3):
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                resp = await client.post(url, content=payload_bytes, headers=headers)
+                if resp.status_code == 200:
+                    logger.info("Sent %s payload to cloud", endpoint)
+                    return resp.json()
+                logger.warning(
+                    "Cloud returned %d for %s: %s",
+                    resp.status_code,
+                    endpoint,
+                    resp.text,
+                )
+        except httpx.HTTPError as e:
+            logger.warning("Attempt %d failed for %s: %s", attempt + 1, endpoint, e)
+
+        if attempt < 2:
+            await asyncio.sleep(2**attempt)
+
+    logger.error("Failed to send %s payload after 3 attempts", endpoint)
+    return None
+
+
 async def send_to_cloud_delete(endpoint: str, resource_id: str) -> bool:
     """Send a DELETE request to cloud ingestion API.
 

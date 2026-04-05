@@ -191,6 +191,7 @@
             <div class="filter-bar" style="margin-bottom:0.75rem;">
                 <span style="font-size:0.8rem; color:#888; margin-right:0.5rem;">Status:</span>
                 <button class="filter-pill active" data-group="unreviewed" onclick="setFilter('unreviewed', 'all', this)">All</button>
+                <button class="filter-pill" data-group="unreviewed" onclick="setFilter('unreviewed', 'to_apply', this)">To Apply</button>
                 <button class="filter-pill" data-group="unreviewed" onclick="setFilter('unreviewed', 'applied', this)">Applied</button>
                 <button class="filter-pill" data-group="unreviewed" onclick="setFilter('unreviewed', 'assessment', this)">Assessment</button>
                 <button class="filter-pill" data-group="unreviewed" onclick="setFilter('unreviewed', 'assignment', this)">Assignment</button>
@@ -208,6 +209,7 @@
             <div class="filter-bar" style="margin-bottom:0.75rem;">
                 <span style="font-size:0.8rem; color:#888; margin-right:0.5rem;">Status:</span>
                 <button class="filter-pill active" data-group="reviewed" onclick="setFilter('reviewed', 'all', this)">All</button>
+                <button class="filter-pill" data-group="reviewed" onclick="setFilter('reviewed', 'to_apply', this)">To Apply</button>
                 <button class="filter-pill" data-group="reviewed" onclick="setFilter('reviewed', 'applied', this)">Applied</button>
                 <button class="filter-pill" data-group="reviewed" onclick="setFilter('reviewed', 'assessment', this)">Assessment</button>
                 <button class="filter-pill" data-group="reviewed" onclick="setFilter('reviewed', 'assignment', this)">Assignment</button>
@@ -414,7 +416,7 @@
         // Tab 2: Queue Review + Classifications
         // ================================================================
 
-        const STAGE_OPTIONS = ['applied', 'assessment', 'assignment', 'interview', 'offer', 'rejected'];
+        const STAGE_OPTIONS = ['to_apply', 'waiting_for_referral', 'applied', 'assessment', 'assignment', 'interview', 'offer', 'rejected'];
 
         function labelDropdownHtml(prefix, id) {
             return `

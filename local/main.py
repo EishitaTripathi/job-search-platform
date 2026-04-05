@@ -182,10 +182,16 @@ async def main():
     scheduler = AsyncIOScheduler()
 
     if _gmail_configured():
-        scheduler.add_job(email_check, "interval", hours=2, id="email_check")
+        scheduler.add_job(
+            email_check,
+            "interval",
+            minutes=15,
+            id="email_check",
+            next_run_time=__import__("datetime").datetime.now(),
+        )
         scheduler.add_job(daily_followup, "cron", hour=9, minute=5, id="daily_followup")
         logger.info(
-            "Gmail configured — scheduling email_check every 2h, daily_followup at 9:05"
+            "Gmail configured — scheduling email_check every 15min, daily_followup at 9:05"
         )
     else:
         logger.warning(

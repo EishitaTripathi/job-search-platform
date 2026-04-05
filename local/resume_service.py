@@ -354,6 +354,8 @@ VALID_QUEUE_LABELS = {
     "irrelevant",
     "status_update",
     "recommendation",
+    "to_apply",
+    "waiting_for_referral",
     "applied",
     "assessment",
     "assignment",
