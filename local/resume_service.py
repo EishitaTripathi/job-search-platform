@@ -472,10 +472,9 @@ async def relabel_classification(
     if not item:
         raise HTTPException(404, "Classification not found")
 
-    # If label unchanged, this is a "Reviewed" confirmation — keep confirmed_by as-is
-    # If label changed, this is a re-label — set confirmed_by to 'user'
-    label_changed = req.label != item["current_stage"]
-    new_confirmed_by = "user" if label_changed else "verified"
+    # Re-label always sets confirmed_by='user' and sends to cloud.
+    # The "Reviewed" button uses confirmAsIs() which sets 'verified' instead.
+    new_confirmed_by = "user"
 
     # Update DB
     async with acquire() as conn:

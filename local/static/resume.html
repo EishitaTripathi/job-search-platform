@@ -601,10 +601,11 @@
                     method: 'POST',
                     body: JSON.stringify({ label }),
                 });
-                const msg = result.routed
-                    ? 'Re-labeled and re-routed through pipeline.'
-                    : 'Re-labeled (no email body available for pipeline re-routing).';
-                showStatus(msg, 'success');
+                if (result.routed) {
+                    showStatus('Re-labeled and sent to cloud.', 'success');
+                } else {
+                    showStatus('Re-labeled locally but cloud send failed (Ollama may be busy). Try again later.', 'error');
+                }
                 loadClassifications();
                 loadQueueMetrics();
             } catch (e) { showStatus(e.message, 'error'); }
