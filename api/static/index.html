@@ -29,7 +29,6 @@
                     <a href="#" onclick="showTab('chat')" data-tab="chat">Chat</a>
                     <a href="#" onclick="showTab('ops')" data-tab="ops">Pipeline Ops</a>
                     <a href="#" onclick="showTab('resumes')" data-tab="resumes">Resumes</a>
-                    <a href="#" onclick="showTab('queue')" data-tab="queue">Review Queue <span id="queue-badge" class="badge hidden">0</span></a>
                 </div>
             </nav>
 
@@ -136,18 +135,6 @@
                     <button onclick="uploadResume()">Upload</button>
                 </div>
                 <div id="resumes-list" class="card-list"></div>
-            </div>
-
-            <!-- Review Queue Tab -->
-            <div id="tab-queue" class="tab-content hidden">
-                <div id="queue-metrics" class="metrics-bar">
-                    <span>Auto-classified: <strong id="metric-auto">0</strong></span>
-                    <span>User-corrected: <strong id="metric-user">0</strong></span>
-                    <span>Accuracy: <strong id="metric-accuracy">-</strong></span>
-                    <span>Queue depth: <strong id="metric-depth">0</strong></span>
-                </div>
-                <div id="queue-list" class="card-list"></div>
-                <p id="queue-empty" class="empty-state hidden">No items in queue. All emails classified.</p>
             </div>
 
             <!-- Job Detail Modal -->

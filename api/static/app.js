@@ -55,7 +55,6 @@ function showTab(tab) {
     else if (tab === 'chat') loadChatJobSelect();
     else if (tab === 'ops') { loadOpsMetrics(); loadRuns(); }
     else if (tab === 'resumes') loadResumes();
-    else if (tab === 'queue') { loadQueue(); loadQueueMetrics(); }
 }
 
 // ---------------------------------------------------------------------------
@@ -548,115 +547,6 @@ async function uploadResume() {
         fileInput.value = '';
         nameInput.value = '';
         loadResumes();
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Review Queue (Labeling)
-// ---------------------------------------------------------------------------
-
-async function loadQueue() {
-    const items = await api('/api/queue');
-    const list = document.getElementById('queue-list');
-    const empty = document.getElementById('queue-empty');
-
-    // Update badge
-    const badge = document.getElementById('queue-badge');
-    if (items.length > 0) {
-        badge.textContent = items.length;
-        badge.classList.remove('hidden');
-    } else {
-        badge.classList.add('hidden');
-    }
-
-    if (!items.length) {
-        list.innerHTML = '';
-        empty.classList.remove('hidden');
-        return;
-    }
-    empty.classList.add('hidden');
-
-    list.innerHTML = items.map(q => `
-        <div class="card" id="queue-card-${q.id}">
-            <div class="card-header">
-                <span class="card-title">${esc(q.subject || 'No subject')}</span>
-                <span class="badge badge-to_apply">${esc(q.guessed_stage || 'unknown')}</span>
-            </div>
-            <div class="card-body">
-                <p class="card-meta">${esc(q.snippet || '')}</p>
-                ${q.guessed_company ? `<p><strong>Company:</strong> ${esc(q.guessed_company)} ${q.guessed_role ? '— ' + esc(q.guessed_role) : ''}</p>` : ''}
-                <div style="margin-top:12px; display:flex; gap:8px; align-items:center; flex-wrap:wrap">
-                    <select id="queue-label-${q.id}">
-                        <option value="">Select label...</option>
-                        <option value="irrelevant">Irrelevant</option>
-                        <option value="status_update">Status Update</option>
-                        <option value="recommendation">Recommendation</option>
-                    </select>
-                    <select id="queue-stage-${q.id}" class="hidden">
-                        <option value="applied">Applied</option>
-                        <option value="assessment">Assessment</option>
-                        <option value="assignment">Assignment</option>
-                        <option value="interview">Interview</option>
-                        <option value="offer">Offer</option>
-                        <option value="rejected">Rejected</option>
-                    </select>
-                    <button onclick="resolveQueueItem(${q.id})" style="padding:4px 16px; background:#238636; color:white; border:none; border-radius:4px; cursor:pointer">Confirm</button>
-                </div>
-            </div>
-        </div>
-    `).join('');
-
-    // Show stage dropdown when "status_update" is selected
-    items.forEach(q => {
-        const labelSel = document.getElementById(`queue-label-${q.id}`);
-        const stageSel = document.getElementById(`queue-stage-${q.id}`);
-        labelSel.addEventListener('change', () => {
-            stageSel.classList.toggle('hidden', labelSel.value !== 'status_update');
-        });
-    });
-}
-
-async function resolveQueueItem(queueId) {
-    const label = document.getElementById(`queue-label-${queueId}`).value;
-    if (!label) { alert('Select a label first'); return; }
-
-    const stage = label === 'status_update'
-        ? document.getElementById(`queue-stage-${queueId}`).value
-        : label;
-
-    await api(`/api/queue/${queueId}/resolve`, {
-        method: 'POST',
-        body: JSON.stringify({ label: stage }),
-    });
-
-    // Remove card with animation
-    const card = document.getElementById(`queue-card-${queueId}`);
-    if (card) {
-        card.style.opacity = '0';
-        card.style.transition = 'opacity 0.3s';
-        setTimeout(() => { card.remove(); loadQueueMetrics(); }, 300);
-    }
-}
-
-async function loadQueueMetrics() {
-    try {
-        const m = await api('/api/queue/metrics');
-        document.getElementById('metric-auto').textContent = m.auto_classified || 0;
-        document.getElementById('metric-user').textContent = m.user_corrected || 0;
-        document.getElementById('metric-accuracy').textContent =
-            m.accuracy_rate != null ? `${(m.accuracy_rate * 100).toFixed(0)}%` : '-';
-        document.getElementById('metric-depth').textContent = m.queue_depth || 0;
-
-        // Update badge
-        const badge = document.getElementById('queue-badge');
-        if (m.queue_depth > 0) {
-            badge.textContent = m.queue_depth;
-            badge.classList.remove('hidden');
-        } else {
-            badge.classList.add('hidden');
-        }
-    } catch (e) {
-        // Metrics endpoint may not exist yet
     }
 }
 

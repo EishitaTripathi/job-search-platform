@@ -31,13 +31,16 @@ services:
       - "11434:11434"
     volumes:
       - ollama_data:/root/.ollama
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
     entrypoint: ["/bin/sh", "-c", "ollama serve & sleep 5 && ollama pull phi3:mini && wait"]
     healthcheck:
       test: ["CMD-SHELL", "ollama list | grep -q phi3"]
       interval: 10s
       timeout: 10s
-      retries: 12
-      start_period: 30s
+      retries: 18
+      start_period: 60s
 
   # ---------------------------------------------------------------------------
   # ChromaDB — vector store for email classification few-shot retrieval (PII)
@@ -82,11 +85,11 @@ services:
       --backend-store-uri sqlite:///mlflow/mlflow.db
       --default-artifact-root /mlflow/artifacts
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:5000/health || exit 1"]
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:5000/health')\" || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 15s
+      start_period: 30s
 
   # ---------------------------------------------------------------------------
   # App — local agents (Email Classifier, Follow-up Advisor) + resume service

@@ -3,17 +3,26 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Resume Upload — Local PII Redaction</title>
+    <title>Local Dashboard — Job Search Platform</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f8f9fa; color: #333; }
         .container { max-width: 1200px; margin: 0 auto; padding: 1rem; }
-        h1 { margin-bottom: 1rem; font-size: 1.5rem; }
+        h1 { margin-bottom: 0.5rem; font-size: 1.5rem; }
         h2 { margin-bottom: 0.5rem; font-size: 1.1rem; color: #555; }
 
-        .upload-section { background: #fff; border-radius: 8px; padding: 1.5rem; margin-bottom: 1rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-        .upload-section input[type="file"] { margin-right: 0.5rem; }
-        .upload-section input[type="text"] { padding: 0.4rem 0.8rem; border: 1px solid #ddd; border-radius: 4px; width: 200px; margin-right: 0.5rem; }
+        /* Tabs */
+        .tab-nav { display: flex; gap: 0; border-bottom: 2px solid #e5e7eb; margin-bottom: 1rem; }
+        .tab-link { padding: 0.6rem 1.2rem; text-decoration: none; color: #666; font-weight: 500; border-bottom: 2px solid transparent; margin-bottom: -2px; cursor: pointer; position: relative; }
+        .tab-link:hover { color: #333; }
+        .tab-link.active { color: #2563eb; border-bottom-color: #2563eb; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        .badge { background: #dc2626; color: #fff; font-size: 0.7rem; padding: 1px 6px; border-radius: 10px; margin-left: 4px; vertical-align: middle; }
+        .badge.hidden { display: none; }
+
+        /* Common */
+        .section-card { background: #fff; border-radius: 8px; padding: 1.5rem; margin-bottom: 1rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
         button { padding: 0.5rem 1rem; border: none; border-radius: 4px; cursor: pointer; font-size: 0.9rem; }
         .btn-primary { background: #2563eb; color: #fff; }
         .btn-primary:hover { background: #1d4ed8; }
@@ -22,7 +31,15 @@
         .btn-danger { background: #dc2626; color: #fff; }
         .btn-danger:hover { background: #b91c1c; }
         .btn-primary:disabled { background: #93c5fd; cursor: not-allowed; }
+        .hidden { display: none; }
+        .status-msg { padding: 0.5rem; border-radius: 4px; margin-bottom: 1rem; }
+        .status-msg.success { background: #dcfce7; color: #166534; }
+        .status-msg.error { background: #fee2e2; color: #991b1b; }
 
+        /* Resume Upload */
+        .upload-section { background: #fff; border-radius: 8px; padding: 1.5rem; margin-bottom: 1rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .upload-section input[type="file"] { margin-right: 0.5rem; }
+        .upload-section input[type="text"] { padding: 0.4rem 0.8rem; border: 1px solid #ddd; border-radius: 4px; width: 200px; margin-right: 0.5rem; }
         .preview-section { display: none; }
         .preview-section.active { display: block; }
         .preview-panels { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem; }
@@ -30,77 +47,182 @@
         .panel pre { white-space: pre-wrap; word-wrap: break-word; font-size: 0.85rem; line-height: 1.5; max-height: 500px; overflow-y: auto; }
         .panel textarea { width: 100%; min-height: 500px; font-family: monospace; font-size: 0.85rem; line-height: 1.5; border: 1px solid #ddd; border-radius: 4px; padding: 0.5rem; resize: vertical; }
         .panel-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; }
-
         .entity-tag { display: inline-block; background: #fef3c7; border: 1px solid #f59e0b; border-radius: 3px; padding: 0.1rem 0.3rem; font-size: 0.75rem; margin: 0.1rem; }
         .entity-tag.person { background: #dbeafe; border-color: #3b82f6; }
         .entity-tag.email { background: #dcfce7; border-color: #22c55e; }
         .entity-tag.phone { background: #fce7f3; border-color: #ec4899; }
         .entity-tag.location { background: #e0e7ff; border-color: #6366f1; }
-
         .entities-summary { background: #fff; border-radius: 8px; padding: 1rem; margin-bottom: 1rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
         .actions { display: flex; gap: 0.5rem; margin-bottom: 1rem; }
-
         .resume-list { margin-top: 1rem; }
         .resume-item { background: #fff; border-radius: 8px; padding: 1rem; margin-bottom: 0.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1); display: flex; justify-content: space-between; align-items: center; }
         .resume-item .name { font-weight: 600; }
         .resume-item .date { color: #888; font-size: 0.85rem; }
 
-        .hidden { display: none; }
-        .status { padding: 0.5rem; border-radius: 4px; margin-bottom: 1rem; }
-        .status.success { background: #dcfce7; color: #166534; }
-        .status.error { background: #fee2e2; color: #991b1b; }
+        /* Metrics bar */
+        .metrics-bar { display: flex; gap: 1rem; margin-bottom: 1rem; flex-wrap: wrap; }
+        .metric-card { background: #fff; border-radius: 8px; padding: 1rem 1.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1); text-align: center; flex: 1; min-width: 120px; }
+        .metric-count { display: block; font-size: 1.8rem; font-weight: 700; color: #2563eb; }
+        .metric-label { display: block; font-size: 0.8rem; color: #888; margin-top: 0.25rem; }
+
+        /* Queue cards */
+        .queue-card { background: #fff; border-radius: 8px; padding: 1rem; margin-bottom: 0.75rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1); transition: opacity 0.3s, transform 0.3s; }
+        .queue-card.fade-out { opacity: 0; transform: translateX(20px); }
+        .queue-card .subject { font-weight: 600; margin-bottom: 0.25rem; }
+        .queue-card .snippet { color: #666; font-size: 0.85rem; margin-bottom: 0.5rem; }
+        .queue-card .guesses { font-size: 0.8rem; color: #888; margin-bottom: 0.5rem; }
+        .queue-card .controls { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+        .queue-card select { padding: 0.3rem 0.5rem; border: 1px solid #ddd; border-radius: 4px; font-size: 0.85rem; }
+        .stage-badge { display: inline-block; background: #e0e7ff; color: #4338ca; border-radius: 3px; padding: 0.1rem 0.4rem; font-size: 0.75rem; font-weight: 600; }
+
+        /* Gmail status */
+        .status-grid { display: flex; flex-direction: column; gap: 0.5rem; }
+        .status-item { display: flex; align-items: center; gap: 0.5rem; font-size: 0.9rem; }
+        .status-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+        .status-dot.green { background: #22c55e; }
+        .status-dot.red { background: #dc2626; }
+        .status-dot.yellow { background: #f59e0b; }
+
+        /* Accuracy bars */
+        .accuracy-row { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.4rem; }
+        .accuracy-row .date { width: 80px; font-size: 0.8rem; color: #888; flex-shrink: 0; }
+        .bar-bg { flex: 1; height: 20px; background: #f3f4f6; border-radius: 4px; overflow: hidden; }
+        .bar-fill { height: 100%; background: #2563eb; border-radius: 4px; transition: width 0.3s; min-width: 2px; }
+        .accuracy-row .pct { width: 100px; font-size: 0.8rem; color: #666; text-align: right; flex-shrink: 0; }
+
+        /* Runs table */
+        .runs-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+        .runs-table th { text-align: left; padding: 0.5rem; border-bottom: 2px solid #e5e7eb; color: #888; font-weight: 600; }
+        .runs-table td { padding: 0.5rem; border-bottom: 1px solid #f3f4f6; }
+        .status-badge { padding: 0.15rem 0.5rem; border-radius: 3px; font-size: 0.75rem; font-weight: 600; }
+        .status-badge.completed { background: #dcfce7; color: #166534; }
+        .status-badge.failed { background: #fee2e2; color: #991b1b; }
+        .status-badge.running { background: #dbeafe; color: #1e40af; }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>Resume Upload — PII Redaction Preview</h1>
-        <p style="color: #666; margin-bottom: 1rem;">Your original resume never leaves this machine. Only the redacted version gets uploaded to the cloud.</p>
+        <h1>Local Dashboard</h1>
+        <p style="color: #666; margin-bottom: 0.75rem;">Everything here stays on your machine. Email data and PII never leave localhost.</p>
 
-        <div id="status-msg" class="status hidden"></div>
+        <div id="status-msg" class="status-msg hidden"></div>
 
-        <!-- Upload -->
-        <div class="upload-section">
-            <input type="file" id="resume-file" accept=".pdf,.txt,.docx">
-            <button class="btn-primary" onclick="previewResume()" id="preview-btn">Preview Redaction</button>
-        </div>
+        <!-- Tab Navigation -->
+        <nav class="tab-nav">
+            <a class="tab-link active" data-tab="resume" onclick="showTab('resume')">Resume Upload</a>
+            <a class="tab-link" data-tab="queue" onclick="showTab('queue')">Queue Review <span id="queue-badge" class="badge hidden">0</span></a>
+            <a class="tab-link" data-tab="tracking" onclick="showTab('tracking')">Gmail &amp; Tracking</a>
+        </nav>
 
-        <!-- Preview -->
-        <div id="preview-section" class="preview-section">
-            <div class="entities-summary" id="entities-summary"></div>
+        <!-- ================================================================ -->
+        <!-- Tab 1: Resume Upload -->
+        <!-- ================================================================ -->
+        <div id="tab-resume" class="tab-content active">
+            <div class="upload-section">
+                <input type="file" id="resume-file" accept=".pdf,.txt,.docx">
+                <button class="btn-primary" onclick="previewResume()" id="preview-btn">Preview Redaction</button>
+            </div>
 
-            <div class="preview-panels">
-                <div class="panel">
-                    <div class="panel-header">
-                        <h2>Original (stays local)</h2>
-                        <button class="btn-primary" onclick="toggleOriginal()" style="font-size:0.8rem; padding:0.3rem 0.6rem;">Show/Hide</button>
+            <div id="preview-section" class="preview-section">
+                <div class="entities-summary" id="entities-summary"></div>
+                <div class="preview-panels">
+                    <div class="panel">
+                        <div class="panel-header">
+                            <h2>Original (stays local)</h2>
+                            <button class="btn-primary" onclick="toggleOriginal()" style="font-size:0.8rem; padding:0.3rem 0.6rem;">Show/Hide</button>
+                        </div>
+                        <pre id="original-text" class="hidden"></pre>
                     </div>
-                    <pre id="original-text" class="hidden" style="filter: blur(0px);"></pre>
+                    <div class="panel">
+                        <div class="panel-header">
+                            <h2>Redacted (editable — this goes to cloud)</h2>
+                        </div>
+                        <textarea id="redacted-text"></textarea>
+                    </div>
                 </div>
-                <div class="panel">
-                    <div class="panel-header">
-                        <h2>Redacted (editable — this goes to cloud)</h2>
-                    </div>
-                    <textarea id="redacted-text"></textarea>
+                <div class="actions">
+                    <input type="text" id="resume-name" placeholder="Resume name (e.g. Backend Focus)" style="padding:0.5rem; border:1px solid #ddd; border-radius:4px; width:250px;">
+                    <button class="btn-success" onclick="approveResume()">Approve &amp; Upload</button>
+                    <button class="btn-danger" onclick="rejectResume()">Reject &amp; Start Over</button>
                 </div>
             </div>
 
-            <div class="actions">
-                <input type="text" id="resume-name" placeholder="Resume name (e.g. Backend Focus)" style="padding:0.5rem; border:1px solid #ddd; border-radius:4px; width:250px;">
-                <button class="btn-success" onclick="approveResume()">Approve & Upload</button>
-                <button class="btn-danger" onclick="rejectResume()">Reject & Start Over</button>
-            </div>
+            <h2 style="margin-top: 1.5rem;">Uploaded Resumes</h2>
+            <div id="resume-list" class="resume-list"></div>
         </div>
 
-        <!-- Existing Resumes -->
-        <h2 style="margin-top: 1.5rem;">Uploaded Resumes</h2>
-        <div id="resume-list" class="resume-list"></div>
+        <!-- ================================================================ -->
+        <!-- Tab 2: Queue Review -->
+        <!-- ================================================================ -->
+        <div id="tab-queue" class="tab-content">
+            <div class="metrics-bar">
+                <div class="metric-card">
+                    <span class="metric-count" id="metric-auto">0</span>
+                    <span class="metric-label">Auto-classified</span>
+                </div>
+                <div class="metric-card">
+                    <span class="metric-count" id="metric-user">0</span>
+                    <span class="metric-label">User-corrected</span>
+                </div>
+                <div class="metric-card">
+                    <span class="metric-count" id="metric-accuracy">-</span>
+                    <span class="metric-label">Accuracy</span>
+                </div>
+                <div class="metric-card">
+                    <span class="metric-count" id="metric-depth">0</span>
+                    <span class="metric-label">Queue Depth</span>
+                </div>
+            </div>
+
+            <div id="queue-list"></div>
+            <p id="queue-empty" class="hidden" style="color:#888; padding:1rem;">No items in queue. All emails have been classified.</p>
+        </div>
+
+        <!-- ================================================================ -->
+        <!-- Tab 3: Gmail & Tracking -->
+        <!-- ================================================================ -->
+        <div id="tab-tracking" class="tab-content">
+            <div class="section-card">
+                <h2>Gmail Status</h2>
+                <div id="gmail-status" style="margin-top:0.5rem;">Loading...</div>
+            </div>
+
+            <div class="section-card">
+                <h2>Classification Accuracy Over Time</h2>
+                <div id="accuracy-history" style="margin-top:0.5rem;">Loading...</div>
+            </div>
+
+            <div class="section-card">
+                <h2>Recent Agent Runs</h2>
+                <table class="runs-table">
+                    <thead>
+                        <tr>
+                            <th>Event</th>
+                            <th>Agents</th>
+                            <th>Status</th>
+                            <th>Started</th>
+                            <th>Duration</th>
+                        </tr>
+                    </thead>
+                    <tbody id="runs-tbody">
+                        <tr><td colspan="5" style="color:#888; padding:12px;">Loading...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
     </div>
 
     <script>
-        const API = '';
+        // -- Utilities --
+        function esc(str) {
+            if (!str) return '';
+            const d = document.createElement('div');
+            d.textContent = str;
+            return d.innerHTML;
+        }
 
         async function apiFetch(path, options = {}) {
-            const resp = await fetch(API + path, {
+            const resp = await fetch(path, {
                 headers: { 'Content-Type': 'application/json', ...options.headers },
                 ...options,
             });
@@ -114,40 +236,45 @@
         function showStatus(msg, type) {
             const el = document.getElementById('status-msg');
             el.textContent = msg;
-            el.className = `status ${type}`;
+            el.className = `status-msg ${type}`;
             el.classList.remove('hidden');
             setTimeout(() => el.classList.add('hidden'), 5000);
         }
 
+        // -- Tab Navigation --
+        function showTab(tab) {
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+            document.getElementById('tab-' + tab).classList.add('active');
+            document.querySelectorAll('.tab-link').forEach(el => {
+                el.classList.toggle('active', el.dataset.tab === tab);
+            });
+            if (tab === 'resume') loadResumes();
+            else if (tab === 'queue') { loadQueue(); loadQueueMetrics(); }
+            else if (tab === 'tracking') { loadGmailStatus(); loadAccuracyHistory(); loadRuns(); }
+        }
+
+        // ================================================================
+        // Tab 1: Resume Upload
+        // ================================================================
         async function previewResume() {
             const file = document.getElementById('resume-file').files[0];
             if (!file) return showStatus('Please select a file.', 'error');
-
             const btn = document.getElementById('preview-btn');
             btn.disabled = true;
             btn.textContent = 'Processing...';
-
             try {
                 const formData = new FormData();
                 formData.append('file', file);
-
-                const resp = await fetch('/upload/preview', {
-                    method: 'POST',
-                    body: formData,
-                });
+                const resp = await fetch('/upload/preview', { method: 'POST', body: formData });
                 if (!resp.ok) {
                     const err = await resp.json().catch(() => ({}));
                     throw new Error(err.detail || 'Preview failed');
                 }
                 const data = await resp.json();
-
                 document.getElementById('original-text').textContent = data.original;
                 document.getElementById('redacted-text').value = data.redacted;
-                // Default to generic name — don't use filename (may contain PII)
                 const resumeCount = document.querySelectorAll('.resume-item').length;
                 document.getElementById('resume-name').value = `Resume ${resumeCount + 1}`;
-
-                // Show entities summary
                 const summary = document.getElementById('entities-summary');
                 if (data.entities.length === 0) {
                     summary.innerHTML = '<strong>No PII detected.</strong> The resume appears clean.';
@@ -160,11 +287,10 @@
                                     type.toLowerCase().includes('email') ? 'email' :
                                     type.toLowerCase().includes('phone') ? 'phone' :
                                     type.toLowerCase().includes('location') ? 'location' : '';
-                        html += `<span class="entity-tag ${cls}">${type}: ${count}</span> `;
+                        html += `<span class="entity-tag ${cls}">${esc(type)}: ${count}</span> `;
                     }
                     summary.innerHTML = html;
                 }
-
                 document.getElementById('preview-section').classList.add('active');
             } catch (e) {
                 showStatus(e.message, 'error');
@@ -174,28 +300,23 @@
             }
         }
 
-        function toggleOriginal() {
-            document.getElementById('original-text').classList.toggle('hidden');
-        }
+        function toggleOriginal() { document.getElementById('original-text').classList.toggle('hidden'); }
 
         async function approveResume() {
             const name = document.getElementById('resume-name').value.trim();
             const redacted = document.getElementById('redacted-text').value;
             if (!name) return showStatus('Please enter a resume name.', 'error');
             if (!redacted.trim()) return showStatus('Redacted text is empty.', 'error');
-
             try {
                 const result = await apiFetch('/upload/approve', {
                     method: 'POST',
                     body: JSON.stringify({ name, redacted_text: redacted }),
                 });
-                showStatus(`Resume "${result.name}" uploaded successfully!`, 'success');
+                showStatus(`Resume "${esc(result.name)}" uploaded successfully!`, 'success');
                 document.getElementById('preview-section').classList.remove('active');
                 document.getElementById('resume-file').value = '';
                 loadResumes();
-            } catch (e) {
-                showStatus(e.message, 'error');
-            }
+            } catch (e) { showStatus(e.message, 'error'); }
         }
 
         function rejectResume() {
@@ -215,18 +336,16 @@
                 list.innerHTML = resumes.map(r => `
                     <div class="resume-item">
                         <div>
-                            <span class="name">${r.name}</span>
+                            <span class="name">${esc(r.name)}</span>
                             <span class="date"> — ${new Date(r.uploaded_at).toLocaleDateString()}</span>
                         </div>
                         <div>
                             <button class="btn-primary" onclick="viewResume(${r.id})" style="font-size:0.8rem; padding:0.3rem 0.6rem;">View</button>
-                            <button class="btn-danger" onclick="deleteResume(${r.id}, '${r.name}')" style="font-size:0.8rem; padding:0.3rem 0.6rem; margin-left:0.25rem;">Delete</button>
+                            <button class="btn-danger" onclick="deleteResume(${r.id}, '${esc(r.name)}')" style="font-size:0.8rem; padding:0.3rem 0.6rem; margin-left:0.25rem;">Delete</button>
                         </div>
                     </div>
                 `).join('');
-            } catch (e) {
-                console.error('Failed to load resumes:', e);
-            }
+            } catch (e) { console.error('Failed to load resumes:', e); }
         }
 
         async function viewResume(id) {
@@ -236,9 +355,7 @@
                 document.getElementById('redacted-text').value = data.text;
                 document.getElementById('entities-summary').innerHTML = '<strong>Viewing stored resume (already redacted)</strong>';
                 document.getElementById('preview-section').classList.add('active');
-            } catch (e) {
-                showStatus(e.message, 'error');
-            }
+            } catch (e) { showStatus(e.message, 'error'); }
         }
 
         async function deleteResume(id, name) {
@@ -247,13 +364,213 @@
                 await fetch(`/resumes/${id}`, { method: 'DELETE' });
                 showStatus(`Resume "${name}" deleted.`, 'success');
                 loadResumes();
+            } catch (e) { showStatus(e.message, 'error'); }
+        }
+
+        // ================================================================
+        // Tab 2: Queue Review
+        // ================================================================
+        async function loadQueue() {
+            try {
+                const items = await apiFetch('/api/queue');
+                const list = document.getElementById('queue-list');
+                const empty = document.getElementById('queue-empty');
+
+                if (!items.length) {
+                    list.innerHTML = '';
+                    empty.classList.remove('hidden');
+                    return;
+                }
+                empty.classList.add('hidden');
+
+                list.innerHTML = items.map(q => `
+                    <div class="queue-card" id="queue-card-${q.id}">
+                        <div class="subject">${esc(q.subject)}</div>
+                        <div class="snippet">${esc(q.snippet)}</div>
+                        <div class="guesses">
+                            ${q.guessed_stage ? `<span class="stage-badge">${esc(q.guessed_stage)}</span>` : ''}
+                            ${q.guessed_company ? esc(q.guessed_company) : ''}
+                            ${q.guessed_role ? ' — ' + esc(q.guessed_role) : ''}
+                        </div>
+                        <div class="controls">
+                            <select id="queue-label-${q.id}" onchange="onLabelChange(${q.id})">
+                                <option value="">Select label...</option>
+                                <option value="irrelevant">Irrelevant</option>
+                                <option value="status_update">Status Update</option>
+                                <option value="recommendation">Recommendation</option>
+                            </select>
+                            <select id="queue-stage-${q.id}" class="hidden">
+                                <option value="applied">Applied</option>
+                                <option value="assessment">Assessment</option>
+                                <option value="assignment">Assignment</option>
+                                <option value="interview">Interview</option>
+                                <option value="offer">Offer</option>
+                                <option value="rejected">Rejected</option>
+                            </select>
+                            <button class="btn-success" onclick="resolveQueueItem(${q.id})" style="padding:0.3rem 1rem; font-size:0.85rem;">Confirm</button>
+                        </div>
+                    </div>
+                `).join('');
             } catch (e) {
-                showStatus(e.message, 'error');
+                console.error('Failed to load queue:', e);
             }
         }
 
-        // Load resumes on page load
+        function onLabelChange(queueId) {
+            const label = document.getElementById(`queue-label-${queueId}`).value;
+            const stageSel = document.getElementById(`queue-stage-${queueId}`);
+            if (label === 'status_update') {
+                stageSel.classList.remove('hidden');
+            } else {
+                stageSel.classList.add('hidden');
+            }
+        }
+
+        async function resolveQueueItem(queueId) {
+            const labelSel = document.getElementById(`queue-label-${queueId}`);
+            const label = labelSel.value;
+            if (!label) return showStatus('Select a label first.', 'error');
+
+            const finalLabel = label === 'status_update'
+                ? document.getElementById(`queue-stage-${queueId}`).value
+                : label;
+
+            try {
+                await apiFetch(`/api/queue/${queueId}/resolve`, {
+                    method: 'POST',
+                    body: JSON.stringify({ label: finalLabel }),
+                });
+                const card = document.getElementById(`queue-card-${queueId}`);
+                card.classList.add('fade-out');
+                setTimeout(() => {
+                    card.remove();
+                    loadQueueMetrics();
+                    if (!document.querySelectorAll('.queue-card:not(.fade-out)').length) {
+                        document.getElementById('queue-empty').classList.remove('hidden');
+                    }
+                }, 300);
+            } catch (e) { showStatus(e.message, 'error'); }
+        }
+
+        async function loadQueueMetrics() {
+            try {
+                const m = await apiFetch('/api/queue/metrics');
+                document.getElementById('metric-auto').textContent = m.auto_classified || 0;
+                document.getElementById('metric-user').textContent = m.user_corrected || 0;
+                document.getElementById('metric-accuracy').textContent =
+                    m.accuracy_rate != null ? `${(m.accuracy_rate * 100).toFixed(0)}%` : '-';
+                document.getElementById('metric-depth').textContent = m.queue_depth || 0;
+
+                const badge = document.getElementById('queue-badge');
+                if (m.queue_depth > 0) {
+                    badge.textContent = m.queue_depth;
+                    badge.classList.remove('hidden');
+                } else {
+                    badge.classList.add('hidden');
+                }
+            } catch (e) { console.error('Failed to load queue metrics:', e); }
+        }
+
+        // ================================================================
+        // Tab 3: Gmail & Tracking
+        // ================================================================
+        async function loadGmailStatus() {
+            try {
+                const s = await apiFetch('/api/gmail/status');
+                let html = '<div class="status-grid">';
+                html += `<div class="status-item">
+                    <span class="status-dot ${s.credentials_exist ? 'green' : 'red'}"></span>
+                    credentials.json: ${s.credentials_exist ? 'Found' : 'Missing'}
+                </div>`;
+                html += `<div class="status-item">
+                    <span class="status-dot ${s.token_exist ? 'green' : 'red'}"></span>
+                    token.json: ${s.token_exist ? 'Found' : 'Missing'}
+                </div>`;
+                if (s.token_exist) {
+                    html += `<div class="status-item">
+                        <span class="status-dot ${s.token_has_refresh ? 'green' : 'yellow'}"></span>
+                        Refresh token: ${s.token_has_refresh ? 'Present' : 'Missing'}
+                    </div>`;
+                    if (s.token_expiry) {
+                        html += `<div class="status-item">
+                            <span class="status-dot ${s.token_expired ? 'red' : 'green'}"></span>
+                            Token: ${s.token_expired ? 'Expired' : 'Valid'} (expires ${new Date(s.token_expiry).toLocaleString()})
+                        </div>`;
+                    }
+                }
+                if (s.last_email_check) {
+                    const lec = s.last_email_check;
+                    html += `<div class="status-item" style="margin-top:0.5rem;">
+                        <span class="status-dot ${lec.status === 'completed' ? 'green' : 'red'}"></span>
+                        Last email check: ${new Date(lec.started_at).toLocaleString()}
+                        — ${esc(lec.status)}
+                        ${lec.emails_fetched != null ? ` (${lec.emails_fetched} fetched, ${lec.emails_processed} processed)` : ''}
+                    </div>`;
+                } else {
+                    html += `<div class="status-item" style="margin-top:0.5rem;">
+                        <span class="status-dot yellow"></span>
+                        Last email check: Never run
+                    </div>`;
+                }
+                html += '</div>';
+                document.getElementById('gmail-status').innerHTML = html;
+            } catch (e) {
+                document.getElementById('gmail-status').innerHTML = `<span style="color:#991b1b">Failed to load: ${esc(e.message)}</span>`;
+            }
+        }
+
+        async function loadAccuracyHistory() {
+            try {
+                const data = await apiFetch('/api/queue/metrics/history');
+                const el = document.getElementById('accuracy-history');
+                if (!data.history.length) {
+                    el.innerHTML = '<p style="color:#888">No classification data yet. Labels will appear here as emails are classified.</p>';
+                    return;
+                }
+                let html = '<div class="accuracy-bars">';
+                for (const day of data.history.reverse()) {
+                    const pct = day.accuracy != null ? (day.accuracy * 100).toFixed(0) : 0;
+                    html += `<div class="accuracy-row">
+                        <span class="date">${esc(day.date)}</span>
+                        <div class="bar-bg"><div class="bar-fill" style="width:${pct}%"></div></div>
+                        <span class="pct">${pct}% (${day.auto}a / ${day.user}u)</span>
+                    </div>`;
+                }
+                html += '</div>';
+                el.innerHTML = html;
+            } catch (e) {
+                document.getElementById('accuracy-history').innerHTML = `<span style="color:#991b1b">Failed to load: ${esc(e.message)}</span>`;
+            }
+        }
+
+        async function loadRuns() {
+            try {
+                const runs = await apiFetch('/api/runs?limit=20');
+                const tbody = document.getElementById('runs-tbody');
+                if (!runs.length) {
+                    tbody.innerHTML = '<tr><td colspan="5" style="color:#888; padding:12px;">No runs recorded yet.</td></tr>';
+                    return;
+                }
+                tbody.innerHTML = runs.map(r => {
+                    const duration = r.duration_seconds != null ? `${Number(r.duration_seconds).toFixed(1)}s` : '-';
+                    const statusCls = r.status === 'completed' ? 'completed' : r.status === 'failed' ? 'failed' : 'running';
+                    const agents = (r.agent_chain || []).join(' > ');
+                    return `<tr>
+                        <td>${esc(r.event_type || '')}</td>
+                        <td>${esc(agents)}</td>
+                        <td><span class="status-badge ${statusCls}">${esc(r.status || '')}</span></td>
+                        <td>${r.started_at ? new Date(r.started_at).toLocaleString() : '-'}</td>
+                        <td>${duration}</td>
+                    </tr>`;
+                }).join('');
+            } catch (e) {
+                document.getElementById('runs-tbody').innerHTML = `<tr><td colspan="5" style="color:#991b1b">Failed to load: ${esc(e.message)}</td></tr>`;
+            }
+        }
+
+        // -- Init --
         loadResumes();
+        loadQueueMetrics(); // populate badge on page load
     </script>
 </body>
 </html>

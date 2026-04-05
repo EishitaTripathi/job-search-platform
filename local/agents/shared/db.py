@@ -8,17 +8,32 @@ Usage:
 All connections use sslmode=require in production (CLAUDE.md security rule).
 """
 
+import asyncio
 import os
 from contextlib import asynccontextmanager
 
 import asyncpg
 
 _pool: asyncpg.Pool | None = None
+_pool_loop: asyncio.AbstractEventLoop | None = None
 
 
 async def get_pool() -> asyncpg.Pool:
-    """Return the shared connection pool, creating it on first call."""
-    global _pool
+    """Return the shared connection pool, creating it on first call.
+
+    Automatically recreates the pool when the running event loop changes
+    (e.g. between pytest-asyncio test functions).
+    """
+    global _pool, _pool_loop
+    loop = asyncio.get_running_loop()
+    if _pool is not None and _pool_loop is not loop:
+        # Pool was created on a different event loop — discard it
+        try:
+            _pool.terminate()
+        except Exception:
+            pass
+        _pool = None
+        _pool_loop = None
     if _pool is None:
         database_url = os.environ["DATABASE_URL"]
         ssl = "require" if "rds.amazonaws.com" in database_url else None
@@ -28,15 +43,17 @@ async def get_pool() -> asyncpg.Pool:
             max_size=10,
             ssl=ssl,
         )
+        _pool_loop = loop
     return _pool
 
 
 async def close_pool() -> None:
     """Shut down the connection pool gracefully."""
-    global _pool
+    global _pool, _pool_loop
     if _pool is not None:
         await _pool.close()
         _pool = None
+        _pool_loop = None
 
 
 @asynccontextmanager

@@ -26,7 +26,11 @@ def get_chroma_client() -> chromadb.HttpClient:
     if _client is None:
         host = os.environ.get("CHROMADB_HOST", "localhost")
         port = int(os.environ.get("CHROMADB_PORT", "8000"))
-        _client = chromadb.HttpClient(host=host, port=port, timeout=10)
+        settings = chromadb.config.Settings(
+            chroma_server_http_port=str(port),
+            anonymized_telemetry=False,
+        )
+        _client = chromadb.HttpClient(host=host, port=port, settings=settings)
     return _client
 
 

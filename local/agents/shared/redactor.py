@@ -60,12 +60,14 @@ class PiiRedactor:
             entities=self.ENTITIES,
             language=language,
         )
+        operators = {
+            entity: OperatorConfig("replace", {"new_value": f"<{entity}>"})
+            for entity in self.ENTITIES
+        }
         anonymized = self._anonymizer.anonymize(
             text=text,
             analyzer_results=results,
-            operators={
-                "DEFAULT": OperatorConfig("replace", {"new_value": "<{entity_type}>"}),
-            },
+            operators=operators,
         )
         return anonymized.text
 

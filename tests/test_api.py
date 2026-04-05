@@ -104,11 +104,12 @@ async def test_login_correct_password(fastapi_app):
 
 
 @pytest.mark.asyncio
-async def test_queue_requires_auth(fastapi_app):
+async def test_queue_removed_from_cloud(fastapi_app):
+    """Queue endpoints removed from cloud API — PII boundary enforcement."""
     transport = ASGITransport(app=fastapi_app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         resp = await client.get("/api/queue")
-        assert resp.status_code == 401
+        assert resp.status_code == 404
 
 
 @pytest.mark.asyncio
