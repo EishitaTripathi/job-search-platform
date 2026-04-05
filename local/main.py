@@ -43,7 +43,7 @@ async def email_check():
     - irrelevant -> skip
     """
     # Lazy imports — only loaded when Gmail is actually configured
-    from local.gmail.auth import get_gmail_service, fetch_unread_emails
+    from local.gmail.auth import get_gmail_service, fetch_recent_emails
     from local.agents.email_classifier.graph import (
         build_graph as build_email_classifier,
     )
@@ -60,7 +60,7 @@ async def email_check():
     )
     try:
         service = get_gmail_service()
-        emails = fetch_unread_emails(service)
+        emails = fetch_recent_emails(service)
         logger.info(f"Fetched {len(emails)} unread emails")
 
         classifier = build_email_classifier()

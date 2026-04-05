@@ -57,14 +57,14 @@ def get_gmail_service():
     return build("gmail", "v1", credentials=creds)
 
 
-def fetch_unread_emails(service, max_results: int = 20) -> list[dict]:
-    """Fetch recent unread emails, returning id/subject/snippet/body."""
+def fetch_recent_emails(service, max_results: int = 100) -> list[dict]:
+    """Fetch emails from the last 4 months, returning id/subject/snippet/body."""
     results = (
         service.users()
         .messages()
         .list(
             userId="me",
-            q="is:unread",
+            q="newer_than:120d",
             maxResults=max_results,
         )
         .execute()
