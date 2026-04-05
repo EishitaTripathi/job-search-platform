@@ -423,6 +423,74 @@ async def resolve_queue_item(
     return {"status": "resolved"}
 
 
+@app.get("/api/classifications")
+async def list_classifications(_auth=Depends(_require_api_key)):
+    """List all classified emails (auto + user) for review and re-labeling."""
+    async with acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT id, email_id, subject, snippet, stage, confirmed_by, created_at
+            FROM labeled_emails
+            ORDER BY created_at DESC
+            """
+        )
+    return [dict(r) for r in rows]
+
+
+class RelabelRequest(BaseModel):
+    label: str
+
+
+@app.post("/api/classifications/{classification_id}/relabel")
+async def relabel_classification(
+    classification_id: int, req: RelabelRequest, _auth=Depends(_require_api_key)
+):
+    """Re-label an existing classification. Updates DB and ChromaDB."""
+    if req.label not in VALID_QUEUE_LABELS:
+        raise HTTPException(
+            400,
+            f"Invalid label '{req.label}'. Valid: {sorted(VALID_QUEUE_LABELS)}",
+        )
+
+    async with acquire() as conn:
+        item = await conn.fetchrow(
+            "SELECT id, email_id, subject, snippet FROM labeled_emails WHERE id = $1",
+            classification_id,
+        )
+    if not item:
+        raise HTTPException(404, "Classification not found")
+
+    # Update DB
+    async with acquire() as conn:
+        await conn.execute(
+            "UPDATE labeled_emails SET stage = $1, confirmed_by = 'user' WHERE id = $2",
+            req.label,
+            classification_id,
+        )
+
+    # Update ChromaDB for RAG few-shot (re-embed with new label)
+    try:
+        from local.agents.shared.embedder import LocalEmbedder
+        from local.agents.shared.memory import get_email_collection
+
+        embedder = LocalEmbedder()
+        email_text = f"{item['subject']} {item['snippet']}"
+        embedding = embedder.embed(email_text)
+        collection = get_email_collection()
+        collection.upsert(
+            ids=[item["email_id"]],
+            documents=[email_text],
+            embeddings=[embedding],
+            metadatas=[{"label": req.label, "confirmed_by": "user"}],
+        )
+    except Exception:
+        logger.warning(
+            "Failed to update ChromaDB for relabel — DB updated successfully"
+        )
+
+    return {"status": "relabeled"}
+
+
 @app.get("/api/queue/metrics")
 async def queue_metrics(_auth=Depends(_require_api_key)):
     """Classification accuracy summary."""

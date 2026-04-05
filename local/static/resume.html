@@ -174,8 +174,16 @@
                 </div>
             </div>
 
+            <!-- Pending Review -->
+            <h2>Pending Review</h2>
             <div id="queue-list"></div>
-            <p id="queue-empty" class="hidden" style="color:#888; padding:1rem;">No items in queue. All emails have been classified.</p>
+            <p id="queue-empty" class="hidden" style="color:#888; padding:1rem;">No items pending. All emails have been reviewed.</p>
+
+            <!-- All Classifications -->
+            <h2 style="margin-top:1.5rem;">All Classifications</h2>
+            <p style="color:#666; font-size:0.85rem; margin-bottom:0.5rem;">Click a label to re-classify. Changes update ChromaDB and improve future accuracy.</p>
+            <div id="classifications-list"></div>
+            <p id="classifications-empty" class="hidden" style="color:#888; padding:1rem;">No emails classified yet.</p>
         </div>
 
         <!-- ================================================================ -->
@@ -249,7 +257,7 @@
                 el.classList.toggle('active', el.dataset.tab === tab);
             });
             if (tab === 'resume') loadResumes();
-            else if (tab === 'queue') { loadQueue(); loadQueueMetrics(); }
+            else if (tab === 'queue') { loadQueue(); loadClassifications(); loadQueueMetrics(); }
             else if (tab === 'tracking') { loadGmailStatus(); loadAccuracyHistory(); loadRuns(); }
         }
 
@@ -368,8 +376,40 @@
         }
 
         // ================================================================
-        // Tab 2: Queue Review
+        // Tab 2: Queue Review + All Classifications
         // ================================================================
+
+        const STAGE_OPTIONS = ['applied', 'assessment', 'assignment', 'interview', 'offer', 'rejected'];
+
+        function labelDropdownHtml(prefix, id) {
+            return `
+                <select id="${prefix}-type-${id}" onchange="onTypeChange('${prefix}', ${id})">
+                    <option value="">Select type...</option>
+                    <option value="irrelevant">Irrelevant</option>
+                    <option value="status_update">Status Update</option>
+                    <option value="recommendation">Recommendation</option>
+                </select>
+                <select id="${prefix}-stage-${id}" class="hidden">
+                    ${STAGE_OPTIONS.map(s => `<option value="${s}">${s.charAt(0).toUpperCase() + s.slice(1)}</option>`).join('')}
+                </select>
+            `;
+        }
+
+        function onTypeChange(prefix, id) {
+            const type = document.getElementById(`${prefix}-type-${id}`).value;
+            const stageSel = document.getElementById(`${prefix}-stage-${id}`);
+            if (type === 'status_update') stageSel.classList.remove('hidden');
+            else stageSel.classList.add('hidden');
+        }
+
+        function getFinalLabel(prefix, id) {
+            const type = document.getElementById(`${prefix}-type-${id}`).value;
+            if (!type) return null;
+            if (type === 'status_update') return document.getElementById(`${prefix}-stage-${id}`).value;
+            return type;
+        }
+
+        // -- Pending Queue --
         async function loadQueue() {
             try {
                 const items = await apiFetch('/api/queue');
@@ -393,20 +433,7 @@
                             ${q.guessed_role ? ' — ' + esc(q.guessed_role) : ''}
                         </div>
                         <div class="controls">
-                            <select id="queue-label-${q.id}" onchange="onLabelChange(${q.id})">
-                                <option value="">Select label...</option>
-                                <option value="irrelevant">Irrelevant</option>
-                                <option value="status_update">Status Update</option>
-                                <option value="recommendation">Recommendation</option>
-                            </select>
-                            <select id="queue-stage-${q.id}" class="hidden">
-                                <option value="applied">Applied</option>
-                                <option value="assessment">Assessment</option>
-                                <option value="assignment">Assignment</option>
-                                <option value="interview">Interview</option>
-                                <option value="offer">Offer</option>
-                                <option value="rejected">Rejected</option>
-                            </select>
+                            ${labelDropdownHtml('q', q.id)}
                             <button class="btn-success" onclick="resolveQueueItem(${q.id})" style="padding:0.3rem 1rem; font-size:0.85rem;">Confirm</button>
                         </div>
                     </div>
@@ -416,35 +443,21 @@
             }
         }
 
-        function onLabelChange(queueId) {
-            const label = document.getElementById(`queue-label-${queueId}`).value;
-            const stageSel = document.getElementById(`queue-stage-${queueId}`);
-            if (label === 'status_update') {
-                stageSel.classList.remove('hidden');
-            } else {
-                stageSel.classList.add('hidden');
-            }
-        }
-
         async function resolveQueueItem(queueId) {
-            const labelSel = document.getElementById(`queue-label-${queueId}`);
-            const label = labelSel.value;
-            if (!label) return showStatus('Select a label first.', 'error');
-
-            const finalLabel = label === 'status_update'
-                ? document.getElementById(`queue-stage-${queueId}`).value
-                : label;
+            const label = getFinalLabel('q', queueId);
+            if (!label) return showStatus('Select a type first.', 'error');
 
             try {
                 await apiFetch(`/api/queue/${queueId}/resolve`, {
                     method: 'POST',
-                    body: JSON.stringify({ label: finalLabel }),
+                    body: JSON.stringify({ label }),
                 });
                 const card = document.getElementById(`queue-card-${queueId}`);
                 card.classList.add('fade-out');
                 setTimeout(() => {
                     card.remove();
                     loadQueueMetrics();
+                    loadClassifications();
                     if (!document.querySelectorAll('.queue-card:not(.fade-out)').length) {
                         document.getElementById('queue-empty').classList.remove('hidden');
                     }
@@ -452,6 +465,78 @@
             } catch (e) { showStatus(e.message, 'error'); }
         }
 
+        // -- All Classifications --
+        function labelDisplayName(stage) {
+            if (['irrelevant', 'status_update', 'recommendation'].includes(stage)) return stage.replace('_', ' ');
+            return 'status update > ' + stage;
+        }
+
+        async function loadClassifications() {
+            try {
+                const items = await apiFetch('/api/classifications');
+                const list = document.getElementById('classifications-list');
+                const empty = document.getElementById('classifications-empty');
+
+                if (!items.length) {
+                    list.innerHTML = '';
+                    empty.classList.remove('hidden');
+                    return;
+                }
+                empty.classList.add('hidden');
+
+                list.innerHTML = items.map(c => `
+                    <div class="queue-card" id="cls-card-${c.id}">
+                        <div style="display:flex; justify-content:space-between; align-items:start; gap:1rem; flex-wrap:wrap;">
+                            <div style="flex:1; min-width:200px;">
+                                <div class="subject">${esc(c.subject)}</div>
+                                <div class="snippet">${esc(c.snippet || '')}</div>
+                            </div>
+                            <div style="text-align:right; flex-shrink:0;">
+                                <span class="stage-badge">${esc(c.stage)}</span>
+                                <span style="font-size:0.75rem; color:${c.confirmed_by === 'user' ? '#16a34a' : '#888'}; margin-left:4px;">${c.confirmed_by}</span>
+                            </div>
+                        </div>
+                        <div class="controls" id="cls-controls-${c.id}" style="margin-top:0.5rem;">
+                            <button class="btn-primary" onclick="showRelabel(${c.id})" style="padding:0.2rem 0.8rem; font-size:0.8rem;">Re-label</button>
+                        </div>
+                        <div class="controls hidden" id="cls-relabel-${c.id}" style="margin-top:0.5rem;">
+                            ${labelDropdownHtml('cls', c.id)}
+                            <button class="btn-success" onclick="submitRelabel(${c.id})" style="padding:0.3rem 1rem; font-size:0.85rem;">Save</button>
+                            <button class="btn-danger" onclick="cancelRelabel(${c.id})" style="padding:0.3rem 0.8rem; font-size:0.85rem;">Cancel</button>
+                        </div>
+                    </div>
+                `).join('');
+            } catch (e) {
+                console.error('Failed to load classifications:', e);
+            }
+        }
+
+        function showRelabel(id) {
+            document.getElementById(`cls-controls-${id}`).classList.add('hidden');
+            document.getElementById(`cls-relabel-${id}`).classList.remove('hidden');
+        }
+
+        function cancelRelabel(id) {
+            document.getElementById(`cls-relabel-${id}`).classList.add('hidden');
+            document.getElementById(`cls-controls-${id}`).classList.remove('hidden');
+        }
+
+        async function submitRelabel(id) {
+            const label = getFinalLabel('cls', id);
+            if (!label) return showStatus('Select a type first.', 'error');
+
+            try {
+                await apiFetch(`/api/classifications/${id}/relabel`, {
+                    method: 'POST',
+                    body: JSON.stringify({ label }),
+                });
+                showStatus('Re-labeled successfully. ChromaDB updated.', 'success');
+                loadClassifications();
+                loadQueueMetrics();
+            } catch (e) { showStatus(e.message, 'error'); }
+        }
+
+        // -- Metrics --
         async function loadQueueMetrics() {
             try {
                 const m = await apiFetch('/api/queue/metrics');
