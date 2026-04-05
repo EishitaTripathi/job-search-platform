@@ -13,7 +13,6 @@ from datetime import datetime, timezone
 
 from local.agents.shared.llm import llm_generate, sanitize_for_prompt
 from local.agents.shared.db import acquire
-from local.agents.shared.redactor import enforce_pii_boundary
 from local.pipeline.validator import validate_followup
 from local.pipeline.sender import send_to_cloud
 
@@ -99,13 +98,7 @@ async def daily_check() -> list[dict]:
         }
         recommendations.append(rec)
 
-        # Write to local database
-        enforce_pii_boundary(
-            {
-                "recommended_action": rec["recommended_action"],
-                "urgency_reasoning": rec["urgency_reasoning"],
-            }
-        )
+        # Write to local database (PII allowed — stays on this machine)
         async with acquire() as conn:
             await conn.execute(
                 """

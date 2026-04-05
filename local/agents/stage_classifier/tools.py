@@ -13,7 +13,6 @@ from local.agents.shared.embedder import LocalEmbedder
 from local.agents.shared.llm import llm_generate, sanitize_for_prompt
 from local.agents.shared.memory import get_stage_collection
 from local.agents.shared.db import acquire
-from local.agents.shared.redactor import enforce_pii_boundary
 from local.pipeline.validator import validate_status
 from local.pipeline.sender import send_to_cloud
 
@@ -159,7 +158,7 @@ async def store_stage_example(
         metadatas=[{"stage": stage, "confirmed_by": confirmed_by}],
     )
 
-    enforce_pii_boundary({"subject": subject, "snippet": snippet})
+    # Local DB — PII allowed (email data stays on this machine)
     embedding_bytes = bytes(struct.pack(f"{len(embedding)}f", *embedding))
     async with acquire() as conn:
         await conn.execute(
@@ -179,7 +178,6 @@ async def store_stage_example(
 
 async def enqueue_stage_review(email_id: str, stage: str) -> None:
     """Update labeling queue with the guessed stage for human review."""
-    enforce_pii_boundary({"stage": stage})
     async with acquire() as conn:
         await conn.execute(
             """

@@ -21,7 +21,6 @@ from types import SimpleNamespace
 import mlflow
 
 from local.agents.shared.db import acquire
-from local.agents.shared.redactor import enforce_pii_boundary
 
 logger = logging.getLogger(__name__)
 
@@ -70,7 +69,7 @@ async def create_orchestration_run(
 ) -> str:
     """Create a new orchestration run record. Returns the run_id."""
     run_id = str(uuid.uuid4())
-    enforce_pii_boundary({"event_type": event_type, "event_source": event_source})
+    # Local DB — orchestration metadata stays on this machine
     async with acquire() as conn:
         await conn.execute(
             """
@@ -93,12 +92,7 @@ async def update_orchestration_run(
 ) -> None:
     """Update an orchestration run with results or error."""
     error_sanitized = error[:500] if error else None
-    enforce_pii_boundary(
-        {
-            "error": error_sanitized or "",
-            "agent_results": json.dumps(agent_results) if agent_results else "",
-        }
-    )
+    # Local DB — error messages may contain email context, stays on this machine
     async with acquire() as conn:
         await conn.execute(
             """

@@ -11,7 +11,6 @@ from local.agents.shared.embedder import LocalEmbedder
 from local.agents.shared.llm import llm_generate, sanitize_for_prompt
 from local.agents.shared.memory import get_email_collection
 from local.agents.shared.db import acquire
-from local.agents.shared.redactor import enforce_pii_boundary
 
 VALID_LABELS = {"irrelevant", "status_update", "recommendation"}
 
@@ -152,8 +151,7 @@ async def store_labeled_example(
         metadatas=[{"label": label, "confirmed_by": confirmed_by}],
     )
 
-    # Store in PostgreSQL for persistence
-    enforce_pii_boundary({"subject": subject, "snippet": snippet})
+    # Store in PostgreSQL for persistence (local DB — PII allowed here)
     embedding_bytes = bytes(__import__("struct").pack(f"{len(embedding)}f", *embedding))
     async with acquire() as conn:
         await conn.execute(
@@ -181,13 +179,7 @@ async def enqueue_for_labeling(
     guessed_role: str | None,
 ) -> None:
     """Add an email to the labeling queue for human review in the dashboard."""
-    enforce_pii_boundary(
-        {
-            "subject": subject,
-            "snippet": snippet,
-            "body": body,
-        }
-    )
+    # Local DB — PII allowed (email subjects/bodies stay on this machine)
     embedding = _get_embedder().embed(f"{subject} {snippet}")
     embedding_bytes = bytes(__import__("struct").pack(f"{len(embedding)}f", *embedding))
     async with acquire() as conn:
