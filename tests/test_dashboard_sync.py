@@ -356,7 +356,7 @@ def test_topology_health_check_ids_are_valid():
 def test_schema_table_count_matches_rds_check():
     """The number of tables in schema.sql should be reflected in the dashboard."""
     tables = _get_schema_tables()
-    expected_table_count = 13  # As of schema.sql
+    expected_table_count = 14  # As of schema.sql (added source_watermarks)
 
     assert len(tables) == expected_table_count, (
         f"schema.sql has {len(tables)} tables, expected {expected_table_count}. "

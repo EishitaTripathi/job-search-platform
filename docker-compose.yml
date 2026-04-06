@@ -27,6 +27,7 @@ services:
   # ---------------------------------------------------------------------------
   ollama:
     image: ollama/ollama:0.6.2
+    profiles: ["docker-ollama"]  # Only starts with: docker compose --profile docker-ollama up
     ports:
       - "11434:11434"
     volumes:
@@ -105,7 +106,7 @@ services:
       - "8001:8001"
     environment:
       DATABASE_URL: postgresql://jobsearch:${DB_PASSWORD:-localdev}@postgres:5432/jobsearch
-      OLLAMA_BASE_URL: http://ollama:11434
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
       CHROMADB_HOST: chromadb
       CHROMADB_PORT: 8000
       MLFLOW_TRACKING_URI: http://mlflow:5000
@@ -125,8 +126,6 @@ services:
       - ${HOME}/.aws:/aws-creds:ro
     depends_on:
       postgres:
-        condition: service_healthy
-      ollama:
         condition: service_healthy
       chromadb:
         condition: service_healthy
@@ -153,7 +152,7 @@ services:
       AWS_SHARED_CREDENTIALS_FILE: /aws-creds/credentials
       AWS_CONFIG_FILE: /aws-creds/config
       DATABASE_URL: postgresql://jobsearch:${DB_PASSWORD:-localdev}@postgres:5432/jobsearch
-      OLLAMA_BASE_URL: http://ollama:11434
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
       CHROMADB_HOST: chromadb
       CHROMADB_PORT: 8000
       MLFLOW_TRACKING_URI: http://mlflow:5000

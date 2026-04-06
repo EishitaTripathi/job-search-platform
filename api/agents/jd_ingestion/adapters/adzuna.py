@@ -2,16 +2,18 @@
 
 import json
 import os
-import urllib.request
 import urllib.parse
-from .base import SourceAdapter, NormalizedJob
+import urllib.request
+from datetime import date
+
+from .base import NormalizedJob, SourceAdapter
 
 
 class AdzunaAdapter(SourceAdapter):
     source_name = "adzuna"
     tier = 1
 
-    def fetch(self, params: dict) -> list[NormalizedJob]:
+    def fetch(self, params: dict, since: date | None = None) -> list[NormalizedJob]:
         app_id = os.environ.get("ADZUNA_APP_ID", "")
         app_key = os.environ.get("ADZUNA_APP_KEY", "")
         if not app_id or not app_key:
@@ -19,17 +21,20 @@ class AdzunaAdapter(SourceAdapter):
 
         page = params.get("page", 1)
         query = params.get("query", "software engineer")
-        qs = urllib.parse.urlencode(
-            {
-                "app_id": app_id,
-                "app_key": app_key,
-                "results_per_page": 50,
-                "what": query,
-                "where": "United States",
-                "content-type": "application/json",
-                "category": "it-jobs",
-            }
-        )
+        qs_params: dict = {
+            "app_id": app_id,
+            "app_key": app_key,
+            "results_per_page": 50,
+            "what": query,
+            "where": "United States",
+            "content-type": "application/json",
+            "category": "it-jobs",
+        }
+        # Adzuna supports server-side date filtering
+        if since:
+            qs_params["max_days_old"] = (date.today() - since).days
+
+        qs = urllib.parse.urlencode(qs_params)
         url = f"https://api.adzuna.com/v1/api/jobs/us/search/{page}?{qs}"
 
         req = urllib.request.Request(

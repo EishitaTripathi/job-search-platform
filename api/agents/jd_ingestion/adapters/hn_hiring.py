@@ -1,16 +1,18 @@
 """HN Who's Hiring — monthly thread parser via Algolia API."""
 
 import json
-import urllib.request
 import re
-from .base import SourceAdapter, NormalizedJob
+import urllib.request
+from datetime import date
+
+from .base import NormalizedJob, SourceAdapter
 
 
 class HNHiringAdapter(SourceAdapter):
     source_name = "hn_hiring"
     tier = 4
 
-    def fetch(self, params: dict) -> list[NormalizedJob]:
+    def fetch(self, params: dict, since: date | None = None) -> list[NormalizedJob]:
         # Find the latest "Who is hiring?" thread
         search_url = "https://hn.algolia.com/api/v1/search?query=%22Who%20is%20hiring%22&tags=ask_hn&hitsPerPage=1"
         req = urllib.request.Request(
@@ -52,15 +54,25 @@ class HNHiringAdapter(SourceAdapter):
                 role = "Unknown"
                 location = "Unknown"
 
+            date_str = (
+                child.get("created_at", "")[:10] if child.get("created_at") else None
+            )
+
+            # Watermark filter
+            if since and date_str:
+                try:
+                    if date.fromisoformat(date_str) <= since:
+                        continue
+                except ValueError:
+                    pass
+
             results.append(
                 NormalizedJob(
                     company=company,
                     role=role,
                     location=location,
                     ats_url="",  # HN comments don't always have URLs
-                    date_posted=child.get("created_at", "")[:10]
-                    if child.get("created_at")
-                    else None,
+                    date_posted=date_str,
                     source=self.source_name,
                     source_id=str(child.get("id", "")),
                     raw_json={"text": text[:2000], "author": child.get("author", "")},

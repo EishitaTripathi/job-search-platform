@@ -7,6 +7,7 @@ into a single ECS-based pipeline that screens BEFORE storing to S3.
 import asyncpg
 import dataclasses
 import hashlib
+from datetime import date
 import ipaddress
 import json
 import logging
@@ -78,10 +79,16 @@ def determine_fetch_strategy(body: dict) -> str:
 # ---------------------------------------------------------------------------
 
 
-def fetch_via_adapter(source: str, params: dict) -> list[dict]:
-    """Call a source adapter and return NormalizedJob dicts (no S3 storage)."""
+def fetch_via_adapter(
+    source: str, params: dict, since: date | None = None
+) -> list[dict]:
+    """Call a source adapter and return NormalizedJob dicts (no S3 storage).
+
+    Args:
+        since: Watermark date — only return jobs posted after this date.
+    """
     adapter = get_adapter(source)
-    jobs = adapter.fetch(params)
+    jobs = adapter.fetch(params, since=since)
     return [dataclasses.asdict(j) for j in jobs]
 
 
@@ -306,3 +313,46 @@ async def persist_to_rds(
             return existing["id"]
 
     return None
+
+
+async def persist_to_rds_batch(conn, jobs: list[dict], source: str) -> list[int | None]:
+    """Batch upsert job records. Returns list of job_ids (None for deduped).
+
+    Much faster than individual INSERTs for large adapter batches (e.g., Simplify 2600+).
+    Uses ON CONFLICT on (company, role, source) to skip duplicates.
+    """
+    if not jobs:
+        return []
+
+    inserted_ids: list[int | None] = []
+    for j in jobs:
+        date_val = None
+        dp = j.get("date_posted")
+        if dp:
+            try:
+                date_val = date.fromisoformat(dp)
+            except (ValueError, TypeError):
+                pass
+
+        try:
+            result = await conn.fetchrow(
+                """
+                INSERT INTO jobs (company, role, source, ats_url, raw_json, date_posted, analysis_status)
+                VALUES ($1, $2, $3, $4, $5, $6, 'pending')
+                ON CONFLICT (company, role, source) DO NOTHING
+                RETURNING id
+                """,
+                j.get("company", "Unknown"),
+                j.get("role", "Unknown"),
+                source,
+                j.get("ats_url"),
+                json.dumps(j.get("raw_json")) if j.get("raw_json") else None,
+                date_val,
+            )
+            inserted_ids.append(result["id"] if result else None)
+        except asyncpg.exceptions.UniqueViolationError:
+            inserted_ids.append(None)
+
+    new_count = sum(1 for i in inserted_ids if i is not None)
+    logger.info("Batch persist: %d/%d new jobs from %s", new_count, len(jobs), source)
+    return inserted_ids

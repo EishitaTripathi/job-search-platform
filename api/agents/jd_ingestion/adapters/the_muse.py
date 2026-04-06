@@ -1,16 +1,18 @@
 """The Muse API — entry-level tech focus, free."""
 
 import json
-import urllib.request
 import urllib.parse
-from .base import SourceAdapter, NormalizedJob
+import urllib.request
+from datetime import date
+
+from .base import NormalizedJob, SourceAdapter
 
 
 class TheMuseAdapter(SourceAdapter):
     source_name = "the_muse"
     tier = 1
 
-    def fetch(self, params: dict) -> list[NormalizedJob]:
+    def fetch(self, params: dict, since: date | None = None) -> list[NormalizedJob]:
         page = params.get("page", 0)
         qs = urllib.parse.urlencode(
             {
@@ -31,6 +33,20 @@ class TheMuseAdapter(SourceAdapter):
         results = []
         for item in data.get("results", []):
             company = item.get("company", {}).get("name", "Unknown")
+            date_str = (
+                item.get("publication_date", "")[:10]
+                if item.get("publication_date")
+                else None
+            )
+
+            # Watermark filter
+            if since and date_str:
+                try:
+                    if date.fromisoformat(date_str) <= since:
+                        continue
+                except ValueError:
+                    pass
+
             results.append(
                 NormalizedJob(
                     company=company,
@@ -40,9 +56,7 @@ class TheMuseAdapter(SourceAdapter):
                     )
                     or "Unknown",
                     ats_url=item.get("refs", {}).get("landing_page", ""),
-                    date_posted=item.get("publication_date", "")[:10]
-                    if item.get("publication_date")
-                    else None,
+                    date_posted=date_str,
                     source=self.source_name,
                     source_id=str(item.get("id", "")),
                     raw_json=item,

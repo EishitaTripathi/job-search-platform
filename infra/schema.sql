@@ -216,3 +216,13 @@ CREATE TABLE IF NOT EXISTS pipeline_metrics (
     metric_value    NUMERIC,
     recorded_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- ============================================================================
+-- 14. source_watermarks — tracks last fetch per adapter for incremental ingestion
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS source_watermarks (
+    source              TEXT PRIMARY KEY,                   -- adapter name (simplify, the_muse, etc.)
+    last_fetched_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(), -- when this source was last polled
+    latest_date_posted  DATE,                               -- most recent date_posted seen
+    jobs_fetched        INT NOT NULL DEFAULT 0              -- count from last run
+);

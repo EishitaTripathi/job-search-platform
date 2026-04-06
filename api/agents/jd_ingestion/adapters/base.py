@@ -2,6 +2,7 @@
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from datetime import date
 from typing import Optional
 import logging
 
@@ -27,8 +28,13 @@ class SourceAdapter(ABC):
     tier: int = 0
 
     @abstractmethod
-    def fetch(self, params: dict) -> list[NormalizedJob]:
-        """Fetch and normalize job listings from this source."""
+    def fetch(self, params: dict, since: date | None = None) -> list[NormalizedJob]:
+        """Fetch and normalize job listings from this source.
+
+        Args:
+            params: Adapter-specific parameters (e.g., category, company).
+            since: Only return jobs posted after this date (watermark filtering).
+        """
         ...
 
     def _validate_url(self, url: str) -> bool:

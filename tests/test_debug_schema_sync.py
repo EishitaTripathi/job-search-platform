@@ -15,9 +15,9 @@ SCHEMA_PATH = Path(__file__).parent.parent / "infra" / "schema.sql"
 # ---------------------------------------------------------------------------
 
 
-def test_parse_schema_finds_all_13_tables():
+def test_parse_schema_finds_all_tables():
     tables = parse_schema_file(SCHEMA_PATH)
-    assert len(tables) == 13
+    assert len(tables) == 14
     expected = {
         "jobs",
         "labeled_emails",
@@ -32,6 +32,7 @@ def test_parse_schema_finds_all_13_tables():
         "answer_memory",
         "deadlines",
         "pipeline_metrics",
+        "source_watermarks",
     }
     assert set(tables.keys()) == expected
 

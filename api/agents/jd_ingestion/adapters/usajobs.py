@@ -2,29 +2,34 @@
 
 import json
 import os
-import urllib.request
 import urllib.parse
-from .base import SourceAdapter, NormalizedJob
+import urllib.request
+from datetime import date
+
+from .base import NormalizedJob, SourceAdapter
 
 
 class USAJobsAdapter(SourceAdapter):
     source_name = "usajobs"
     tier = 1
 
-    def fetch(self, params: dict) -> list[NormalizedJob]:
+    def fetch(self, params: dict, since: date | None = None) -> list[NormalizedJob]:
         api_key = os.environ.get("USAJOBS_API_KEY", "")
         email = os.environ.get("USAJOBS_EMAIL", "")
         if not api_key or not email:
             return []
 
         keyword = params.get("keyword", "software engineer")
-        qs = urllib.parse.urlencode(
-            {
-                "Keyword": keyword,
-                "ResultsPerPage": 50,
-                "Fields": "min",
-            }
-        )
+        qs_params: dict = {
+            "Keyword": keyword,
+            "ResultsPerPage": 50,
+            "Fields": "min",
+        }
+        # USAJobs supports server-side date filtering
+        if since:
+            qs_params["DatePosted"] = (date.today() - since).days
+
+        qs = urllib.parse.urlencode(qs_params)
         url = f"https://data.usajobs.gov/api/search?{qs}"
 
         req = urllib.request.Request(

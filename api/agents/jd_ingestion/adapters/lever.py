@@ -2,14 +2,17 @@
 
 import json
 import urllib.request
-from .base import SourceAdapter, NormalizedJob
+from datetime import date
+
+from .base import NormalizedJob, SourceAdapter
 
 
 class LeverAdapter(SourceAdapter):
     source_name = "lever"
     tier = 2
 
-    def fetch(self, params: dict) -> list[NormalizedJob]:
+    def fetch(self, params: dict, since: date | None = None) -> list[NormalizedJob]:
+        # Lever doesn't expose post dates, so watermark filtering is not possible
         company_slug = params.get("company", "")
         if not company_slug:
             return []
