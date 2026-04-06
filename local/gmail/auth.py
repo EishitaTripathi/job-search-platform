@@ -108,8 +108,25 @@ def fetch_recent_emails(service, max_results: int = 500) -> list[dict]:
     return emails
 
 
+def _strip_html(html: str) -> str:
+    """Strip HTML tags to get plain text."""
+    import re
+
+    text = re.sub(r"<style[^>]*>.*?</style>", "", html, flags=re.DOTALL)
+    text = re.sub(r"<script[^>]*>.*?</script>", "", text, flags=re.DOTALL)
+    text = re.sub(r"<br\s*/?>", "\n", text, flags=re.IGNORECASE)
+    text = re.sub(r"</?p[^>]*>", "\n", text, flags=re.IGNORECASE)
+    text = re.sub(r"<[^>]+>", "", text)
+    text = re.sub(r"&nbsp;", " ", text)
+    text = re.sub(r"&amp;", "&", text)
+    text = re.sub(r"&lt;", "<", text)
+    text = re.sub(r"&gt;", ">", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
+
+
 def _extract_body(payload: dict) -> str:
-    """Extract plain text body from Gmail message payload."""
+    """Extract body from Gmail message payload (text/plain preferred, text/html fallback)."""
     import base64
 
     if payload.get("body", {}).get("data"):
@@ -117,15 +134,32 @@ def _extract_body(payload: dict) -> str:
             "utf-8", errors="replace"
         )
 
+    # First pass: look for text/plain
     for part in payload.get("parts", []):
         if part["mimeType"] == "text/plain" and part.get("body", {}).get("data"):
             return base64.urlsafe_b64decode(part["body"]["data"]).decode(
                 "utf-8", errors="replace"
             )
-        # Recurse into multipart
         if part.get("parts"):
             result = _extract_body(part)
             if result:
                 return result
+
+    # Second pass: fall back to text/html (calendar invites often only have HTML)
+    for part in payload.get("parts", []):
+        if part["mimeType"] == "text/html" and part.get("body", {}).get("data"):
+            html = base64.urlsafe_b64decode(part["body"]["data"]).decode(
+                "utf-8", errors="replace"
+            )
+            return _strip_html(html)
+        if part.get("parts"):
+            for sub in part["parts"]:
+                if sub.get("mimeType") == "text/html" and sub.get("body", {}).get(
+                    "data"
+                ):
+                    html = base64.urlsafe_b64decode(sub["body"]["data"]).decode(
+                        "utf-8", errors="replace"
+                    )
+                    return _strip_html(html)
 
     return ""

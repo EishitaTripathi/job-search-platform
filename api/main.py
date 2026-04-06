@@ -323,45 +323,123 @@ async def _poll_sqs_messages():
                         source = body.get("source")
 
                         if source:
-                            # Adapter mode: fetch all jobs, then ingest each individually
+                            # Adapter mode: batch fetch + persist with watermark
+                            from api.agents.jd_ingestion.tools import (
+                                persist_to_rds_batch,
+                            )
+
+                            # 1. Query watermark
+                            async with _pool.acquire() as conn:
+                                watermark = await conn.fetchval(
+                                    "SELECT latest_date_posted FROM source_watermarks WHERE source = $1",
+                                    source,
+                                )
+
+                            # Extend visibility — large adapters can take minutes
+                            try:
+                                await asyncio.to_thread(
+                                    sqs.change_message_visibility,
+                                    QueueUrl=queue_url,
+                                    ReceiptHandle=msg["ReceiptHandle"],
+                                    VisibilityTimeout=3600,
+                                )
+                            except Exception:
+                                pass
+
+                            # 2. Fetch with watermark filter
                             jobs = await asyncio.to_thread(
-                                fetch_via_adapter, source, body.get("params", {})
+                                fetch_via_adapter,
+                                source,
+                                body.get("params", {}),
+                                watermark,
                             )
                             logger.info(
-                                "SQS consumer: adapter %s returned %d jobs",
+                                "SQS consumer: adapter %s returned %d jobs (watermark=%s)",
                                 source,
                                 len(jobs),
+                                watermark,
                             )
 
-                            # Extend visibility for large batches (default 300s too short)
-                            if len(jobs) > 50:
-                                try:
-                                    await asyncio.to_thread(
-                                        sqs.change_message_visibility,
-                                        QueueUrl=queue_url,
-                                        ReceiptHandle=msg["ReceiptHandle"],
-                                        VisibilityTimeout=3600,  # 1 hour
-                                    )
-                                except Exception:
-                                    logger.warning(
-                                        "SQS consumer: failed to extend visibility timeout"
+                            if jobs:
+                                async with _pool.acquire() as conn:
+                                    # 3. Batch persist
+                                    job_ids = await persist_to_rds_batch(
+                                        conn, jobs, source
                                     )
 
-                            for job_data in jobs:
-                                async with _pool.acquire() as conn:
-                                    # Build a per-job message with the JD text pre-extracted
-                                    raw = job_data.get("raw_json") or {}
-                                    jd_text = (
-                                        raw.get("description", "")
-                                        if isinstance(raw, dict)
-                                        else ""
+                                    # 4. Update watermark
+                                    dates = [
+                                        j.get("date_posted")
+                                        for j in jobs
+                                        if j.get("date_posted")
+                                    ]
+                                    latest = max(dates) if dates else None
+                                    latest_date = None
+                                    if latest:
+                                        try:
+                                            from datetime import date as _date
+
+                                            latest_date = _date.fromisoformat(latest)
+                                        except (ValueError, TypeError):
+                                            pass
+
+                                    await conn.execute(
+                                        """INSERT INTO source_watermarks
+                                               (source, latest_date_posted, jobs_fetched)
+                                           VALUES ($1, $2, $3)
+                                           ON CONFLICT (source) DO UPDATE SET
+                                               latest_date_posted = GREATEST(
+                                                   source_watermarks.latest_date_posted, $2
+                                               ),
+                                               last_fetched_at = NOW(),
+                                               jobs_fetched = $3""",
+                                        source,
+                                        latest_date,
+                                        len(jobs),
                                     )
-                                    per_job_body = {
-                                        **body,
-                                        "_job_data": job_data,
-                                        "_jd_text": jd_text,
-                                    }
-                                    await run_jd_ingestion(conn, per_job_body)
+
+                                # 5. Re-enqueue ATS searches for new jobs without JD text
+                                new_jobs = [
+                                    (jid, j)
+                                    for jid, j in zip(job_ids, jobs)
+                                    if jid is not None
+                                ]
+                                if new_jobs:
+                                    entries = []
+                                    for i, (jid, j) in enumerate(new_jobs):
+                                        company = j.get("company", "")
+                                        role = j.get("role", "")
+                                        if (
+                                            company
+                                            and company != "Unknown"
+                                            and role
+                                            and role != "Unknown"
+                                        ):
+                                            entries.append(
+                                                {
+                                                    "Id": str(i),
+                                                    "MessageBody": json.dumps(
+                                                        {
+                                                            "job_id": str(jid),
+                                                            "company": company,
+                                                            "role": role,
+                                                        }
+                                                    ),
+                                                }
+                                            )
+                                    # SQS batch send (max 10 per call)
+                                    for batch_start in range(0, len(entries), 10):
+                                        batch = entries[batch_start : batch_start + 10]
+                                        if batch:
+                                            await asyncio.to_thread(
+                                                sqs.send_message_batch,
+                                                QueueUrl=queue_url,
+                                                Entries=batch,
+                                            )
+                                    logger.info(
+                                        "SQS consumer: enqueued %d ATS searches",
+                                        len(entries),
+                                    )
                         else:
                             # URL or search mode: process single message
                             async with _pool.acquire() as conn:
@@ -746,17 +824,22 @@ async def ingest_status(req: IngestStatus, _auth=Depends(require_hmac_auth)):
             req.job_id,
         )
 
-        # Insert deadline if provided
-        if req.deadline:
-            await conn.execute(
-                """
-                INSERT INTO deadlines (job_id, deadline_text, deadline_date)
-                VALUES ($1, $2, $3::date)
-                """,
-                req.job_id,
-                req.deadline,
-                req.deadline,
-            )
+    # Insert deadline separately so a failure doesn't roll back the status update
+    if req.deadline:
+        try:
+            async with _pool.acquire() as conn:
+                await conn.execute(
+                    """
+                    INSERT INTO deadlines (job_id, deadline_text, deadline_date)
+                    VALUES ($1, $2, $3::date)
+                    ON CONFLICT DO NOTHING
+                    """,
+                    req.job_id,
+                    req.deadline,
+                    req.deadline,
+                )
+        except Exception as e:
+            logger.warning("Failed to insert deadline for job %d: %s", req.job_id, e)
 
     return {"status": "ingested", "type": "status"}
 
